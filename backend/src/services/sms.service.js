@@ -11,7 +11,7 @@ import { AppError } from '../middleware/errorHandler.js';
 class SMSService {
   constructor() {
     this.client = null;
-    this.from Phone = config.sms.fromPhone;
+    this.fromPhone = config.sms.fromPhone;
     this.initializeTwilio();
   }
 
