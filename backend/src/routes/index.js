@@ -1,4 +1,12 @@
 import express from 'express';
+import authRoutes from './auth.routes.js';
+import userRoutes from './user.routes.js';
+import eventRoutes from './event.routes.js';
+import attendanceRoutes from './attendance.routes.js';
+import certificateRoutes from './certificate.routes.js';
+import feedbackRoutes from './feedback.routes.js';
+import notificationRoutes from './notification.routes.js';
+import adminRoutes from './admin.routes.js';
 
 const router = express.Router();
 
@@ -15,51 +23,21 @@ router.get('/', (req, res) => {
       certificates: '/api/v1/certificates',
       feedback: '/api/v1/feedback',
       notifications: '/api/v1/notifications',
+      admin: '/api/v1/admin',
     },
     documentation: '/api-docs',
   });
 });
 
-// Placeholder route groups (to be implemented)
-router.all('/auth*', (req, res) => {
-  res.json({ 
-    status: 'info',
-    message: 'Auth routes - Coming in Phase 2',
-    endpoints: ['POST /auth/signup', 'POST /auth/login', 'POST /auth/refresh']
-  });
-});
-
-router.all('/users*', (req, res) => {
-  res.json({ 
-    status: 'info',
-    message: 'User routes - Coming in Phase 2',
-    endpoints: ['GET /users/:id', 'PUT /users/:id', 'GET /users/profile']
-  });
-});
-
-router.all('/events*', (req, res) => {
-  res.json({ 
-    status: 'info',
-    message: 'Event routes - Coming in Phase 2',
-    endpoints: ['GET /events', 'POST /events', 'GET /events/:id']
-  });
-});
-
-router.all('/attendance*', (req, res) => {
-  res.json({ 
-    status: 'info',
-    message: 'Attendance routes - Coming in Phase 2 (QR System)',
-    endpoints: ['POST /attendance/scan', 'GET /attendance/:eventId']
-  });
-});
-
-router.all('/certificates*', (req, res) => {
-  res.json({ 
-    status: 'info',
-    message: 'Certificate routes - Coming in Phase 2',
-    endpoints: ['GET /certificates/:id', 'POST /certificates/generate']
-  });
-});
+// Mount sub-routers
+router.use('/auth', authRoutes);
+router.use('/users', userRoutes);
+router.use('/events', eventRoutes);
+router.use('/attendance', attendanceRoutes);
+router.use('/certificates', certificateRoutes);
+router.use('/feedback', feedbackRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/admin', adminRoutes);
 
 export default router;
 
