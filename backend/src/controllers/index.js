@@ -11,3 +11,4 @@ export { default as certificateController } from './certificate.controller.js';
 export { default as feedbackController } from './feedback.controller.js';
 export { default as notificationController } from './notification.controller.js';
 export { default as adminController } from './admin.controller.js';
+export { default as queueController } from './queue.controller.js';

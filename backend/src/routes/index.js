@@ -7,6 +7,7 @@ import certificateRoutes from './certificate.routes.js';
 import feedbackRoutes from './feedback.routes.js';
 import notificationRoutes from './notification.routes.js';
 import adminRoutes from './admin.routes.js';
+import queueRoutes from './queue.routes.js';
 
 const router = express.Router();
 
@@ -24,6 +25,7 @@ router.get('/', (req, res) => {
       feedback: '/api/v1/feedback',
       notifications: '/api/v1/notifications',
       admin: '/api/v1/admin',
+      queues: '/api/v1/queues (admin only)',
     },
     documentation: '/api-docs',
   });
@@ -38,6 +40,7 @@ router.use('/certificates', certificateRoutes);
 router.use('/feedback', feedbackRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/admin', adminRoutes);
+router.use('/queues', queueRoutes);
 
 export default router;
 

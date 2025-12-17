@@ -3,6 +3,10 @@ import config from './config/index.js';
 import connectDB from './config/database.js';
 import { connectRedis } from './config/redis.js';
 import logger from './utils/logger.js';
+import { allQueues } from './queues/index.js';
+import { closeAllQueues } from './queues/config.js';
+import './queues/processors/index.js'; // Initialize queue processors
+import { setupRecurringJobs } from './queues/processors/scheduled.processor.js';
 
 // Handle uncaught exceptions
 process.on('uncaughtException', err => {
@@ -19,6 +23,10 @@ const startServer = async () => {
       await connectDB();
       // Connect to Redis
       await connectRedis();
+      
+      // Setup recurring jobs (event reminders, analytics, cleanup)
+      await setupRecurringJobs();
+      logger.info('✅ Recurring jobs configured');
     } else {
       logger.warn('⚠️  Running in TEST MODE - Database connections skipped!');
       logger.warn('⚠️  Install MongoDB and Redis for full functionality');
@@ -28,6 +36,7 @@ const startServer = async () => {
     const server = app.listen(config.port, () => {
       logger.info(`🚀 Server running in ${config.env} mode on port ${config.port}`);
       logger.info(`📡 API: http://localhost:${config.port}/api/${config.apiVersion}`);
+      logger.info(`⚙️  Worker queues: ${allQueues.length} active queues processing jobs`);
       if (config.isDevelopment) {
         logger.info(`📚 Documentation: http://localhost:${config.port}/api-docs`);
       }
@@ -43,12 +52,27 @@ const startServer = async () => {
     });
 
     // Graceful shutdown
-    const gracefulShutdown = signal => {
+    const gracefulShutdown = async (signal) => {
       logger.info(`${signal} received. Shutting down gracefully...`);
-      server.close(() => {
-        logger.info('Process terminated!');
-        process.exit(0);
+      
+      // Close server first
+      server.close(async () => {
+        try {
+          // Close all queues
+          await closeAllQueues(allQueues);
+          logger.info('Process terminated!');
+          process.exit(0);
+        } catch (error) {
+          logger.error('Error during shutdown:', error);
+          process.exit(1);
+        }
       });
+
+      // Force shutdown after 30 seconds
+      setTimeout(() => {
+        logger.error('Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+      }, 30000);
     };
 
     process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
