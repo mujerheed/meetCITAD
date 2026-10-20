@@ -681,7 +681,11 @@
         </v-card-text>
         <v-card-actions class="px-5 pb-5">
           <v-spacer></v-spacer>
-          <v-btn variant="text" @click="closeRecoveryDialog">
+          <v-btn
+            variant="text"
+            :disabled="regeneratingRecoveryCodes"
+            @click="closeRecoveryDialog"
+          >
             {{ newRecoveryCodes.length ? 'Done' : 'Cancel' }}
           </v-btn>
           <v-btn

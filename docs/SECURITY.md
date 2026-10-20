@@ -476,10 +476,11 @@ Minimum security test cases before release:
 ### Manual verification record
 
 A local API smoke pass was run on 20 October 2026 against the development
-database. All checks passed (`36/36`):
+database. All checks passed (`37/37`):
 
 - mandatory super-administrator 2FA enrollment, setup-token scope enforcement,
-  TOTP login, single-use recovery codes, and recovery-code regeneration;
+  TOTP login, single-use recovery codes, recovery-code regeneration, and
+  rejection of the TOTP secret from profile responses;
 - super-admin access to administrator, user, and certificate lists;
 - auditor access to analytics and denial of user, audit, admin-management, and
   certificate routes;
