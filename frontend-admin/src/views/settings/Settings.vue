@@ -290,6 +290,50 @@
                 </v-btn>
               </v-card-text>
             </v-card>
+
+            <v-card class="admin-card mt-4" elevation="0">
+              <v-card-text class="pa-5">
+                <div class="section-title mb-1">Two-factor authentication</div>
+                <div class="section-caption mb-3">
+                  <span v-if="auth.currentAdmin?.role === 'super_admin'">
+                    Required for super administrators.
+                  </span>
+                  Use an authenticator app for sign-in and keep recovery codes
+                  somewhere safe.
+                </div>
+
+                <div class="detail-row">
+                  <span>Status</span>
+                  <v-chip
+                    size="small"
+                    :color="auth.currentAdmin?.otpEnabled ? 'success' : 'warning'"
+                    variant="tonal"
+                  >
+                    {{ auth.currentAdmin?.otpEnabled ? 'Enrolled' : 'Not enrolled' }}
+                  </v-chip>
+                </div>
+
+                <v-btn
+                  v-if="auth.currentAdmin?.otpEnabled"
+                  class="mt-4"
+                  variant="outlined"
+                  color="primary"
+                  size="small"
+                  prepend-icon="mdi-refresh"
+                  @click="openRecoveryDialog"
+                >
+                  Regenerate recovery codes
+                </v-btn>
+                <div v-else class="text-caption text-medium-emphasis mt-3">
+                  <span v-if="auth.currentAdmin?.role === 'super_admin'">
+                    Super administrators are enrolled during their next sign-in.
+                  </span>
+                  <span v-else>
+                    Two-factor authentication is optional for this account.
+                  </span>
+                </div>
+              </v-card-text>
+            </v-card>
           </v-col>
         </v-row>
       </v-window-item>
@@ -580,6 +624,79 @@
       </v-window-item>
     </v-window>
 
+    <v-dialog v-model="recoveryDialog" max-width="520" persistent>
+      <v-card class="admin-card">
+        <v-card-title class="pt-5 px-5">
+          {{ newRecoveryCodes.length ? 'New recovery codes' : 'Regenerate recovery codes' }}
+        </v-card-title>
+        <v-card-text class="px-5">
+          <template v-if="!newRecoveryCodes.length">
+            <v-alert
+              type="warning"
+              variant="tonal"
+              density="comfortable"
+              class="mb-4"
+              icon="mdi-alert-outline"
+            >
+              This replaces every existing recovery code. The old codes will stop
+              working immediately.
+            </v-alert>
+
+            <v-text-field
+              v-model="recoveryForm.password"
+              label="Current password"
+              :type="showRecoveryPassword ? 'text' : 'password'"
+              :append-inner-icon="showRecoveryPassword ? 'mdi-eye-off-outline' : 'mdi-eye-outline'"
+              variant="outlined"
+              autocomplete="current-password"
+              class="mb-3"
+              @click:append-inner="showRecoveryPassword = !showRecoveryPassword"
+            ></v-text-field>
+
+            <v-text-field
+              v-model="recoveryForm.code"
+              label="6-digit authenticator code"
+              placeholder="000000"
+              variant="outlined"
+              inputmode="numeric"
+              maxlength="6"
+              autocomplete="one-time-code"
+            ></v-text-field>
+          </template>
+
+          <template v-else>
+            <v-alert
+              type="success"
+              variant="tonal"
+              density="comfortable"
+              class="mb-4"
+              icon="mdi-shield-check-outline"
+            >
+              Store these codes somewhere safe. Each code can be used once.
+            </v-alert>
+            <div class="recovery-code-grid">
+              <code v-for="code in newRecoveryCodes" :key="code">{{ code }}</code>
+            </div>
+          </template>
+        </v-card-text>
+        <v-card-actions class="px-5 pb-5">
+          <v-spacer></v-spacer>
+          <v-btn variant="text" @click="closeRecoveryDialog">
+            {{ newRecoveryCodes.length ? 'Done' : 'Cancel' }}
+          </v-btn>
+          <v-btn
+            v-if="!newRecoveryCodes.length"
+            color="primary"
+            variant="flat"
+            :loading="regeneratingRecoveryCodes"
+            @click="regenerateRecoveryCodes"
+          >
+            Generate codes
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
     <v-snackbar
       v-model="snackbar.show"
       :color="snackbar.color"
@@ -636,6 +753,15 @@ const passwordForm = reactive({
   currentPassword: '',
   newPassword: '',
   confirmPassword: '',
+})
+
+const recoveryDialog = ref(false)
+const regeneratingRecoveryCodes = ref(false)
+const showRecoveryPassword = ref(false)
+const newRecoveryCodes = ref([])
+const recoveryForm = reactive({
+  password: '',
+  code: '',
 })
 
 const buildMode = import.meta.env.MODE
@@ -745,6 +871,54 @@ const changePassword = async () => {
     showMessage(getErrorMessage(error, 'Could not change your password.'), 'error')
   } finally {
     changingPassword.value = false
+  }
+}
+
+const openRecoveryDialog = () => {
+  recoveryForm.password = ''
+  recoveryForm.code = ''
+  newRecoveryCodes.value = []
+  showRecoveryPassword.value = false
+  recoveryDialog.value = true
+}
+
+const closeRecoveryDialog = () => {
+  recoveryDialog.value = false
+  recoveryForm.password = ''
+  recoveryForm.code = ''
+  newRecoveryCodes.value = []
+  showRecoveryPassword.value = false
+}
+
+const regenerateRecoveryCodes = async () => {
+  if (!recoveryForm.password) {
+    showMessage('Enter your current password.', 'error')
+    return
+  }
+  if (!/^\d{6}$/.test(recoveryForm.code || '')) {
+    showMessage('Enter the 6-digit code from your authenticator app.', 'error')
+    return
+  }
+
+  regeneratingRecoveryCodes.value = true
+  try {
+    const result = await auth.regenerateRecoveryCodes(
+      recoveryForm.password,
+      recoveryForm.code
+    )
+    newRecoveryCodes.value = result?.recoveryCodes || []
+    recoveryForm.password = ''
+    recoveryForm.code = ''
+    if (!newRecoveryCodes.value.length) {
+      showMessage('Recovery codes could not be generated.', 'error')
+    }
+  } catch (error) {
+    showMessage(
+      getErrorMessage(error, 'Could not regenerate recovery codes.'),
+      'error'
+    )
+  } finally {
+    regeneratingRecoveryCodes.value = false
   }
 }
 
@@ -903,6 +1077,22 @@ onMounted(() => {
 
 .detail-row span {
   color: var(--admin-muted);
+}
+
+.recovery-code-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.recovery-code-grid code {
+  padding: 8px;
+  border: 1px solid var(--admin-border);
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  background: rgba(var(--v-theme-on-surface), 0.02);
 }
 
 .detail-row strong {

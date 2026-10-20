@@ -144,7 +144,7 @@ Privilege fixes applied:
 - A participant can no longer call the attendance scan endpoint.
 
 Remaining follow-up: automated negative authorization tests for every route
-group (SEC-12) and mandatory 2FA for super administrators (SEC-11).
+group (SEC-12).
 
 ---
 
@@ -162,7 +162,10 @@ group (SEC-12) and mandatory 2FA for super administrators (SEC-11).
 - User password history retains the last five hashes.
 - Account lockout after five failed attempts for two hours.
 - Administrator login restricted to `@citad.org` and `@citad.edu.ng`.
-- Optional TOTP two-factor authentication for administrators.
+- Mandatory TOTP enrollment and login verification for `super_admin` accounts,
+  with single-use recovery codes and authenticated recovery-code regeneration.
+- Optional TOTP two-factor authentication for other administrator accounts when
+  configured manually.
 - Email verification OTP and password reset tokens are stored as SHA-256 hashes
   with expiry (10 minutes and 1 hour respectively).
 - Password reset responses do not reveal whether an email exists.
@@ -177,7 +180,7 @@ group (SEC-12) and mandatory 2FA for super administrators (SEC-11).
 | Password change invalidates admin sessions | Implemented | `changedPasswordAfter` and token versioning reject old tokens |
 | Refresh-token revocation | Implemented | Token version checked on refresh; logout and password change increment it |
 | Logout invalidates tokens | Implemented | Logout increments the account token version |
-| TOTP enforcement | Partial | Require TOTP for all `super_admin` accounts; provide recovery codes |
+| TOTP enforcement | Implemented | Super administrators enroll before their first session; TOTP and single-use recovery codes are verified at login |
 | Token storage | Gap | Avoid long-lived tokens in `localStorage`; prefer `HttpOnly`, `Secure`, `SameSite` cookies or in-memory access tokens with a protected refresh cookie |
 | CSRF protection | Not required today | Required if authentication moves to cookies |
 | Secret strength validation | Partial | Production requires a strong `QR_SIGNATURE_KEY` and `COOKIE_SECRET`; certificate signing key validation is still pending |
@@ -186,6 +189,12 @@ group (SEC-12) and mandatory 2FA for super administrators (SEC-11).
 The QR service no longer uses a public default. Development derives a local key
 from the JWT secret; production refuses to start without a strong
 `QR_SIGNATURE_KEY`.
+
+Super administrators who have not enrolled receive a short-lived, purpose-scoped
+enrollment token after a valid password. The token cannot access API routes and
+is only accepted by the TOTP setup endpoints. Enrollment returns ten single-use
+recovery codes, stored as hashes; regenerating them requires the current password
+and a valid TOTP code.
 
 ---
 
@@ -464,6 +473,26 @@ Minimum security test cases before release:
    rejected.
 10. Certificate PDFs are not reachable without authorization.
 
+### Manual verification record
+
+A local API smoke pass was run on 20 October 2026 against the development
+database. All checks passed (`36/36`):
+
+- mandatory super-administrator 2FA enrollment, setup-token scope enforcement,
+  TOTP login, single-use recovery codes, and recovery-code regeneration;
+- super-admin access to administrator, user, and certificate lists;
+- auditor access to analytics and denial of user, audit, admin-management, and
+  certificate routes;
+- participant denial of administrator routes and attendance scanning;
+- certificate ownership enforcement and removal of the public certificate path;
+- rejection of self role changes;
+- access and refresh token invalidation after logout and password change;
+- rate limiting after repeated failed administrator logins;
+- absence of `fileUrl` in certificate responses.
+
+This is a manual verification, not a substitute for the automated regression
+suite required by SEC-12.
+
 ---
 
 ## 15. Incident response
@@ -497,18 +526,18 @@ Data Protection Officer, IT Operations, and Communications.
 
 | ID | Severity | Risk | Remediation | Status |
 | --- | --- | --- | --- | --- |
-| SEC-01 | Critical | Certificate PDFs served from a public static directory | Removed public mount; every download is authenticated | Code complete |
-| SEC-02 | Critical | Administrative permissions not enforced by the API | Applied `checkPermission` across administrative route groups | Code complete; tests pending |
-| SEC-03 | High | Rate limiters were not mounted | Wired auth, scan, upload, export, admin, and global API limiters | Code complete; verify Redis counters in production |
-| SEC-04 | High | Any authenticated user could submit attendance scans | Scanning and manual check-in restricted to administrators with `view_reports` | Code complete |
-| SEC-05 | High | Admin password change did not revoke existing tokens | Added `changedPasswordAfter`, token versions, and refresh checks | Code complete |
+| SEC-01 | Critical | Certificate PDFs served from a public static directory | Removed public mount; every download is authenticated | Code complete; public URL verified 404 |
+| SEC-02 | Critical | Administrative permissions not enforced by the API | Applied `checkPermission` across administrative route groups | Code complete; manual smoke passed; automated tests pending |
+| SEC-03 | High | Rate limiters were not mounted | Wired auth, scan, upload, export, admin, and global API limiters | Code complete; manual smoke passed; verify Redis counters in production |
+| SEC-04 | High | Any authenticated user could submit attendance scans | Scanning and manual check-in restricted to administrators with `view_reports` | Code complete; verified in manual smoke |
+| SEC-05 | High | Admin password change did not revoke existing tokens | Added `changedPasswordAfter`, token versions, and refresh checks | Code complete; verified in manual smoke |
 | SEC-06 | High | Access and refresh tokens stored in `localStorage` | Move to hardened cookies or memory plus protected refresh cookie | Open |
 | SEC-07 | High | QR signing key fell back to a known default | Development derives a local key; production fails without a strong secret | Code complete |
-| SEC-08 | High | Absolute certificate filesystem paths returned to clients | Store filenames only; strip `fileUrl`; exclude it from exports | Code complete |
-| SEC-09 | Medium | Refresh tokens were replayable and logout did not revoke them | Token versioning on logout, password change, role, and status changes | Code complete |
-| SEC-10 | Medium | Non-super admins could suspend other admins | Super-admin-only peer changes; self role/status changes rejected | Code complete |
-| SEC-11 | Medium | 2FA is optional for privileged accounts | Require TOTP for super administrators | Open |
-| SEC-12 | Medium | No automated security regression tests | Add tests for authorization, QR, uploads, and certificates | In progress |
+| SEC-08 | High | Absolute certificate filesystem paths returned to clients | Store filenames only; strip `fileUrl`; exclude it from exports | Code complete; verified in manual smoke |
+| SEC-09 | Medium | Refresh tokens were replayable and logout did not revoke them | Token versioning on logout, password change, role, and status changes | Code complete; verified in manual smoke |
+| SEC-10 | Medium | Non-super admins could suspend other admins | Super-admin-only peer changes; self role/status changes rejected | Code complete; self-role test passed |
+| SEC-11 | Medium | 2FA was optional for privileged accounts | Mandatory TOTP enrollment for super administrators, recovery codes, and authenticated regeneration | Code complete; 2FA smoke checks passed |
+| SEC-12 | Medium | No automated security regression tests | Add tests for authorization, QR, uploads, and certificates | In progress; manual smoke passed |
 | SEC-13 | Medium | No production error monitoring or alerting | Integrate Sentry/metrics and alerts | Open |
 | SEC-14 | Medium | Missing `trust proxy` configuration | `TRUST_PROXY` setting and app wiring added | Code complete |
 | SEC-15 | Low | 10 MB JSON body limit was larger than needed | Reduced JSON/urlencoded limit to 2 MB | Code complete |

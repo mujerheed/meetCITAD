@@ -109,7 +109,7 @@ api.interceptors.response.use(
     const originalRequest = error.config || {}
     const token = localStorage.getItem(TOKEN_KEY)
     const refreshToken = localStorage.getItem(REFRESH_KEY)
-    const isAuthRequest = /\/auth\/(admin\/login|refresh|logout)/.test(
+    const isAuthRequest = /\/auth\/(admin\/login|admin\/2fa\/(setup|verify)|refresh|logout)/.test(
       originalRequest.url || ''
     )
 
@@ -171,6 +171,24 @@ export default {
   auth: {
     adminLogin: async (data) => {
       const response = await api.post('/auth/admin/login', data)
+      return unwrap(response)
+    },
+    setupTwoFactor: async (setupToken) => {
+      const response = await api.post('/auth/admin/2fa/setup', { setupToken })
+      return unwrap(response)
+    },
+    verifyTwoFactorSetup: async (setupToken, code) => {
+      const response = await api.post('/auth/admin/2fa/verify', {
+        setupToken,
+        code,
+      })
+      return unwrap(response)
+    },
+    regenerateRecoveryCodes: async (password, code) => {
+      const response = await api.post('/auth/admin/2fa/recovery-codes', {
+        password,
+        code,
+      })
       return unwrap(response)
     },
     me: async () => {

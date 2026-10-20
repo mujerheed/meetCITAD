@@ -55,7 +55,12 @@ VITE_PUBLIC_SITE_URL=http://localhost:5173
 ## 3. Authentication and session
 
 - Login uses `POST /auth/admin/login` with `email`, `password`, and, when
-  enabled for the account, `twoFactorCode`.
+  enabled for the account, `twoFactorCode` (TOTP or a single-use recovery code).
+- Super administrators must enroll in TOTP before a full session is issued. The
+  login screen displays the QR code and manual setup key, then shows recovery
+  codes once enrollment is verified.
+- Recovery codes can be regenerated from Settings after re-entering the current
+  password and a valid TOTP code.
 - Administrator emails must belong to an approved CITAD domain; the backend
   rejects other addresses.
 - The access token is short-lived (default 15 minutes). The API client retries
@@ -200,7 +205,8 @@ recent activity. Data comes from `GET /admin/dashboard` and
 Tabs:
 
 1. **Profile** — full name, phone, department, profile image URL.
-2. **Security** — password change, 2FA status, account status, last login,
+2. **Security** - password change, mandatory 2FA enrollment for super
+   administrators, recovery-code regeneration, account status, last login,
    failed attempts, password-changed timestamp.
 3. **Audit Log** — filter by action/resource and paginate administrator actions.
 4. **System** — live health response, API base URL, environment, and operational

@@ -70,6 +70,12 @@ export const protect = async (req, res, next) => {
     // Verify token
     const decoded = verifyToken(token, config.jwt.accessTokenSecret);
 
+    // Purpose-scoped tokens (for example a 2FA enrollment token) must never be
+    // accepted as normal API access tokens.
+    if (decoded.purpose) {
+      return next(new AppError('Invalid token type. Please login again.', 401));
+    }
+
     // Check if user still exists
     let currentUser;
     if (decoded.role === 'admin') {
@@ -252,6 +258,11 @@ export const optionalAuth = async (req, res, next) => {
     }
 
     const decoded = verifyToken(token, config.jwt.accessTokenSecret);
+
+    // A purpose-scoped token is not an authenticated session.
+    if (decoded.purpose) {
+      return next();
+    }
 
     let currentUser;
     if (decoded.role === 'admin') {

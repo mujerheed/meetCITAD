@@ -95,6 +95,17 @@ export const strictAuthLimiter = createRateLimiter({
 });
 
 /**
+ * Two-Factor Enrollment Rate Limiter
+ * Enrollment is password-verified first, but the endpoint still creates
+ * authenticator secrets and verifies codes, so it needs its own budget.
+ */
+export const twoFactorLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many two-factor attempts, please try again later.',
+});
+
+/**
  * Refresh Token Rate Limiter
  * Refresh is cheap but should not be unbounded; keyed per IP.
  */
@@ -276,6 +287,7 @@ export default {
   apiLimiter,
   authLimiter,
   strictAuthLimiter,
+  twoFactorLimiter,
   refreshLimiter,
   registrationLimiter,
   scanLimiter,

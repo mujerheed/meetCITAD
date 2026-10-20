@@ -91,10 +91,66 @@ export const useAuthStore = defineStore('auth', {
 
       try {
         const response = await api.auth.adminLogin(credentials)
+        if (response?.requiresTwoFactorSetup) {
+          return response
+        }
         this.setSession(response)
         return response
       } catch (error) {
         this.error = getErrorMessage(error, 'Login failed. Please check your details.')
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async beginTwoFactorSetup(setupToken) {
+      this.loading = true
+      this.error = null
+
+      try {
+        return await api.auth.setupTwoFactor(setupToken)
+      } catch (error) {
+        this.error = getErrorMessage(
+          error,
+          'Could not start two-factor authentication setup.'
+        )
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async completeTwoFactorSetup(setupToken, code) {
+      this.loading = true
+      this.error = null
+
+      try {
+        const response = await api.auth.verifyTwoFactorSetup(setupToken, code)
+        this.setSession(response)
+        return response
+      } catch (error) {
+        this.error = getErrorMessage(
+          error,
+          'Could not verify the authentication code.'
+        )
+        throw error
+      } finally {
+        this.loading = false
+      }
+    },
+
+    async regenerateRecoveryCodes(password, code) {
+      this.loading = true
+      this.error = null
+
+      try {
+        return await api.auth.regenerateRecoveryCodes(password, code)
+      } catch (error) {
+        this.error = getErrorMessage(
+          error,
+          'Could not regenerate recovery codes.'
+        )
         throw error
       } finally {
         this.loading = false

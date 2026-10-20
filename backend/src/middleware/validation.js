@@ -133,11 +133,60 @@ export const validateAdminLogin = [
 
   body('otp')
     .optional()
-    .isLength({ min: 6, max: 6 })
-    .withMessage('OTP must be 6 digits')
-    .isNumeric()
-    .withMessage('OTP must contain only numbers'),
+    .isLength({ min: 6, max: 20 })
+    .withMessage('Authentication code must be between 6 and 20 characters')
+    .isAlphanumeric()
+    .withMessage('Authentication code must be alphanumeric'),
 
+  body('twoFactorCode')
+    .optional()
+    .isLength({ min: 6, max: 20 })
+    .withMessage('Authentication code must be between 6 and 20 characters')
+    .isAlphanumeric()
+    .withMessage('Authentication code must be alphanumeric'),
+
+  handleValidationErrors,
+];
+
+/**
+ * Two-Factor Enrollment Validation
+ */
+export const validateTwoFactorSetup = [
+  body('setupToken')
+    .trim()
+    .notEmpty()
+    .withMessage('Two-factor setup token is required'),
+  handleValidationErrors,
+];
+
+export const validateTwoFactorVerification = [
+  body('setupToken')
+    .trim()
+    .notEmpty()
+    .withMessage('Two-factor setup token is required'),
+  body('code')
+    .trim()
+    .notEmpty()
+    .withMessage('Authentication code is required')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('Authentication code must be 6 digits')
+    .isNumeric()
+    .withMessage('Authentication code must contain only numbers'),
+  handleValidationErrors,
+];
+
+export const validateRecoveryCodeRegeneration = [
+  body('password')
+    .notEmpty()
+    .withMessage('Current password is required'),
+  body('code')
+    .trim()
+    .notEmpty()
+    .withMessage('Authentication code is required')
+    .isLength({ min: 6, max: 6 })
+    .withMessage('Authentication code must be 6 digits')
+    .isNumeric()
+    .withMessage('Authentication code must contain only numbers'),
   handleValidationErrors,
 ];
 
@@ -544,6 +593,9 @@ export default {
   validateSignup,
   validateLogin,
   validateAdminLogin,
+  validateTwoFactorSetup,
+  validateTwoFactorVerification,
+  validateRecoveryCodeRegeneration,
   validateForgotPassword,
   validateResetPassword,
   validateUpdatePassword,

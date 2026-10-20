@@ -4,6 +4,7 @@ import { protect } from '../middleware/index.js';
 import {
   authLimiter,
   strictAuthLimiter,
+  twoFactorLimiter,
   refreshLimiter,
   registrationLimiter,
 } from '../middleware/rateLimiter.js';
@@ -11,6 +12,9 @@ import {
   validateSignup,
   validateLogin,
   validateAdminLogin,
+  validateTwoFactorSetup,
+  validateTwoFactorVerification,
+  validateRecoveryCodeRegeneration,
   validateForgotPassword,
   validateUpdatePassword,
 } from '../middleware/validation.js';
@@ -34,6 +38,25 @@ router.post(
   authLimiter,
   validateAdminLogin,
   authController.adminLogin.bind(authController)
+);
+router.post(
+  '/admin/2fa/setup',
+  twoFactorLimiter,
+  validateTwoFactorSetup,
+  authController.setupAdminTwoFactor.bind(authController)
+);
+router.post(
+  '/admin/2fa/verify',
+  twoFactorLimiter,
+  validateTwoFactorVerification,
+  authController.verifyAdminTwoFactorSetup.bind(authController)
+);
+router.post(
+  '/admin/2fa/recovery-codes',
+  protect,
+  twoFactorLimiter,
+  validateRecoveryCodeRegeneration,
+  authController.regenerateAdminRecoveryCodes.bind(authController)
 );
 router.post(
   '/verify-otp',

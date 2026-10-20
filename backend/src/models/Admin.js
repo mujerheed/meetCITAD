@@ -43,7 +43,7 @@ const AdminSchema = new Schema(
     },
     otpEnabled: {
       type: Boolean,
-      default: true,
+      default: false,
     },
     backupCodes: {
       type: [String],

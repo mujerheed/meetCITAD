@@ -176,7 +176,8 @@ backend/
 ### **2. Authentication**
 - JWT access tokens (15min expiry)
 - Refresh tokens (7 days)
-- OTP for admin (speakeasy)
+- TOTP 2FA for administrators; mandatory enrollment for super administrators
+  with single-use recovery codes
 - 2FA for users (optional)
 
 ### **3. Authorization**

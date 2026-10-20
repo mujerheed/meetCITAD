@@ -51,7 +51,8 @@
         <h2 class="login-title mb-1">Administrator access</h2>
         <p class="login-subtitle mb-7">
           Use your CITAD email address and password. Two-factor authentication
-          is required when enabled on your account.
+          is enforced for super administrators and required when enabled on
+          your account.
         </p>
 
         <v-alert
@@ -78,7 +79,111 @@
           {{ auth.error }}
         </v-alert>
 
-        <v-form ref="formRef" @submit.prevent="submit">
+        <div v-if="setup.active" class="setup-card mb-5">
+          <div class="text-overline text-medium-emphasis mb-1">
+            Super administrator enrollment
+          </div>
+          <h3 class="setup-title mb-2">Protect your account with 2FA</h3>
+
+          <template v-if="!setup.recoveryCodes.length">
+            <p class="setup-copy mb-4">
+              Scan this QR code with an authenticator app such as Google
+              Authenticator or Microsoft Authenticator, then enter the
+              6-digit code to finish signing in.
+            </p>
+
+            <div class="setup-qr-wrap mb-4">
+              <img
+                v-if="setup.qrCode"
+                :src="setup.qrCode"
+                alt="Two-factor authentication QR code"
+                class="setup-qr"
+              />
+            </div>
+
+            <v-text-field
+              :model-value="setup.secret"
+              label="Manual setup key"
+              variant="outlined"
+              density="comfortable"
+              prepend-inner-icon="mdi-key-outline"
+              readonly
+              class="mb-3 setup-secret"
+            ></v-text-field>
+
+            <v-text-field
+              v-model="setup.code"
+              label="6-digit authenticator code"
+              placeholder="000000"
+              variant="outlined"
+              prepend-inner-icon="mdi-shield-key-outline"
+              inputmode="numeric"
+              maxlength="6"
+              autocomplete="one-time-code"
+              class="mb-2"
+              @keyup.enter="confirmSetup"
+            ></v-text-field>
+
+            <div v-if="setupError" class="text-error text-caption mb-3">
+              {{ setupError }}
+            </div>
+
+            <v-btn
+              color="accent"
+              variant="flat"
+              block
+              size="large"
+              elevation="0"
+              :loading="auth.loading"
+              class="login-button mb-2"
+              @click="confirmSetup"
+            >
+              Enable 2FA and sign in
+            </v-btn>
+            <v-btn
+              variant="text"
+              block
+              color="primary"
+              :disabled="auth.loading"
+              @click="cancelSetup"
+            >
+              Back to sign in
+            </v-btn>
+          </template>
+
+          <template v-else>
+            <v-alert
+              type="warning"
+              variant="tonal"
+              density="comfortable"
+              class="mb-4"
+              icon="mdi-content-save-alert-outline"
+            >
+              Store these recovery codes somewhere safe. Each code can be used
+              once if you lose access to your authenticator app.
+            </v-alert>
+
+            <div class="recovery-grid mb-4">
+              <code v-for="recoveryCode in setup.recoveryCodes" :key="recoveryCode">
+                {{ recoveryCode }}
+              </code>
+            </div>
+
+            <v-btn
+              color="accent"
+              variant="flat"
+              block
+              size="large"
+              elevation="0"
+              class="login-button"
+              @click="finishSetup"
+            >
+              Continue to dashboard
+            </v-btn>
+          </template>
+        </div>
+
+        <v-form v-if="!setup.active" ref="formRef" @submit.prevent="submit">
           <v-text-field
             v-model="form.email"
             label="CITAD email"
@@ -106,16 +211,16 @@
           <v-text-field
             v-if="showTwoFactor"
             v-model="form.twoFactorCode"
-            label="Two-factor code"
-            placeholder="6-digit code"
+            label="Authenticator or recovery code"
+            placeholder="6-digit or 16-character code"
             variant="outlined"
             prepend-inner-icon="mdi-shield-key-outline"
-            inputmode="numeric"
-            maxlength="6"
+            inputmode="text"
+            maxlength="20"
             autocomplete="one-time-code"
             :rules="twoFactorRules"
             class="mb-3"
-            hint="Enter the code from your authenticator app."
+            hint="Enter the code from your authenticator app, or a saved recovery code."
             persistent-hint
           ></v-text-field>
 
@@ -175,11 +280,21 @@ const auth = useAuthStore()
 const formRef = ref(null)
 const showPassword = ref(false)
 const showTwoFactor = ref(false)
+const setupError = ref('')
 
 const form = reactive({
   email: '',
   password: '',
   twoFactorCode: '',
+})
+
+const setup = reactive({
+  active: false,
+  token: '',
+  qrCode: '',
+  secret: '',
+  code: '',
+  recoveryCodes: [],
 })
 
 const emailRules = [
@@ -197,7 +312,8 @@ const twoFactorRules = [
   (value) =>
     !showTwoFactor.value ||
     /^\d{6}$/.test(value || '') ||
-    'Enter the 6-digit code',
+    /^[A-Za-z0-9]{16}$/.test(value || '') ||
+    'Enter a 6-digit code or a 16-character recovery code',
 ]
 
 const points = [
@@ -218,25 +334,96 @@ const points = [
   },
 ]
 
+const redirectAfterLogin = () => {
+  const redirect =
+    typeof route.query.redirect === 'string' &&
+    route.query.redirect.startsWith('/') &&
+    !route.query.redirect.startsWith('//')
+      ? route.query.redirect
+      : '/'
+
+  router.replace(redirect)
+}
+
+const startSetup = async (setupToken) => {
+  setupError.value = ''
+  setup.active = true
+  setup.token = setupToken
+  setup.qrCode = ''
+  setup.secret = ''
+  setup.code = ''
+  setup.recoveryCodes = []
+  showTwoFactor.value = false
+
+  try {
+    const result = await auth.beginTwoFactorSetup(setupToken)
+    setup.qrCode = result?.qrCode || ''
+    setup.secret = result?.secret || ''
+    if (!setup.qrCode || !setup.secret) {
+      setupError.value = 'Could not load the two-factor setup details. Please try again.'
+    }
+  } catch {
+    // The store exposes the API error in auth.error.
+  }
+}
+
+const confirmSetup = async () => {
+  setupError.value = ''
+  if (!/^\d{6}$/.test(setup.code || '')) {
+    setupError.value = 'Enter the 6-digit code from your authenticator app.'
+    return
+  }
+
+  try {
+    const result = await auth.completeTwoFactorSetup(setup.token, setup.code)
+    const recoveryCodes = result?.recoveryCodes || []
+
+    if (recoveryCodes.length) {
+      setup.recoveryCodes = recoveryCodes
+      setup.code = ''
+    } else {
+      redirectAfterLogin()
+    }
+  } catch {
+    // The store exposes the API error in auth.error.
+  }
+}
+
+const finishSetup = () => {
+  redirectAfterLogin()
+}
+
+const cancelSetup = () => {
+  setup.active = false
+  setup.token = ''
+  setup.qrCode = ''
+  setup.secret = ''
+  setup.code = ''
+  setup.recoveryCodes = []
+  setupError.value = ''
+  showTwoFactor.value = false
+  auth.clearError()
+}
+
 const submit = async () => {
   const { valid } = await formRef.value.validate()
   if (!valid) return
 
   try {
-    await auth.login({
+    const result = await auth.login({
       email: form.email.trim(),
       password: form.password,
       twoFactorCode: form.twoFactorCode || undefined,
       otp: form.twoFactorCode || undefined,
     })
 
-    const redirect =
-      typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/')
-        ? route.query.redirect
-        : '/'
+    if (result?.requiresTwoFactorSetup && result?.setupToken) {
+      await startSetup(result.setupToken)
+      return
+    }
 
-    router.replace(redirect)
-  } catch (error) {
+    redirectAfterLogin()
+  } catch {
     const message = auth.error || ''
     if (/two-factor|2fa|otp/i.test(message)) {
       showTwoFactor.value = true
@@ -405,6 +592,77 @@ const submit = async () => {
   font-weight: 600 !important;
 }
 
+.setup-card {
+  border: 1px solid rgba(15, 42, 68, 0.12);
+  border-radius: 8px;
+  background: rgba(15, 42, 68, 0.025);
+  padding: 20px;
+}
+
+.v-theme--dark .setup-card {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.setup-title {
+  font-size: 1.08rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: rgb(var(--v-theme-primary));
+}
+
+.v-theme--dark .setup-title {
+  color: #f9fafb;
+}
+
+.setup-copy {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: rgba(var(--v-theme-on-surface), 0.64);
+}
+
+.setup-qr-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 12px;
+  border: 1px solid rgba(15, 42, 68, 0.1);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.setup-qr {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+}
+
+.setup-secret :deep(input) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+}
+
+.recovery-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.recovery-grid code {
+  padding: 8px;
+  border: 1px solid rgba(15, 42, 68, 0.12);
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.v-theme--dark .recovery-grid code {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+}
+
 .security-note {
   display: flex;
   gap: 8px;
@@ -449,6 +707,10 @@ const submit = async () => {
   .login-form-side {
     min-height: 100vh;
     padding: 32px 22px;
+  }
+
+  .recovery-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
