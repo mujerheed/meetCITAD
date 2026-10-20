@@ -1,4 +1,6 @@
-/* Global styles */
+/* Global styles - Institutional Design */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 * {
   margin: 0;
   padding: 0;
@@ -6,5 +8,83 @@
 }
 
 body {
-  font-family: 'Roboto', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  line-height: 1.6;
+}
+
+/* Light mode */
+.v-theme--light body {
+  background-color: #FFFFFF;
+  color: #1F2937;
+}
+
+/* Dark mode */
+.v-theme--dark body {
+  background-color: #1A1D23;
+  color: #E5E7EB;
+}
+
+/* Institutional Typography */
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.v-theme--light h1,
+.v-theme--light h2,
+.v-theme--light h3,
+.v-theme--light h4,
+.v-theme--light h5,
+.v-theme--light h6 {
+  color: #0F2A44;
+}
+
+.v-theme--dark h1,
+.v-theme--dark h2,
+.v-theme--dark h3,
+.v-theme--dark h4,
+.v-theme--dark h5,
+.v-theme--dark h6 {
+  color: #F9FAFB;
+}
+
+/* Professional spacing */
+.v-container {
+  max-width: 1200px !important;
+}
+
+/* Remove Vuetify's default transitions for institutional feel */
+.v-btn {
+  transition: background-color 0.2s ease !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 500 !important;
+}
+
+/* Calm, professional card shadows - Maximum 1px as per guidelines */
+.v-card {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+}
+
+/* No flashy animations - institutional feel */
+* {
+  animation-duration: 0s !important;
+  transition-duration: 0.2s !important;
+}
+
+/* High contrast for accessibility */
+.text-medium-emphasis {
+  opacity: 0.7;
+}
+
+/* Clean spacing - strong hierarchy */
+.py-16 {
+  padding-top: 64px !important;
+  padding-bottom: 64px !important;
+}
+
+.py-12 {
+  padding-top: 48px !important;
+  padding-bottom: 48px !important;
 }

@@ -25,9 +25,9 @@ const verifyToken = (token, secret) => {
 /**
  * Generate Access Token
  */
-export const generateAccessToken = (userId, role = 'user') => {
+export const generateAccessToken = (userId, role = 'user', tokenVersion = 0) => {
   return jwt.sign(
-    { id: userId, role },
+    { id: userId, role, ver: tokenVersion },
     config.jwt.accessTokenSecret,
     { expiresIn: config.jwt.accessTokenExpiry }
   );
@@ -36,13 +36,16 @@ export const generateAccessToken = (userId, role = 'user') => {
 /**
  * Generate Refresh Token
  */
-export const generateRefreshToken = (userId, role = 'user') => {
+export const generateRefreshToken = (userId, role = 'user', tokenVersion = 0) => {
   return jwt.sign(
-    { id: userId, role },
+    { id: userId, role, ver: tokenVersion },
     config.jwt.refreshTokenSecret,
     { expiresIn: config.jwt.refreshTokenExpiry }
   );
 };
+
+const tokenVersionMatches = (account, decoded) =>
+  Number(decoded.ver ?? -1) === Number(account.tokenVersion ?? 0);
 
 /**
  * Protect Routes - Verify Access Token
@@ -87,6 +90,11 @@ export const protect = async (req, res, next) => {
     // Check if user changed password after token was issued
     if (currentUser.changedPasswordAfter && currentUser.changedPasswordAfter(decoded.iat)) {
       return next(new AppError('User recently changed password. Please login again.', 401));
+    }
+
+    // Check whether the token has been revoked by logout or a session reset
+    if (!tokenVersionMatches(currentUser, decoded)) {
+      return next(new AppError('Your session is no longer valid. Please login again.', 401));
     }
 
     // Grant access to protected route
@@ -253,8 +261,12 @@ export const optionalAuth = async (req, res, next) => {
     }
 
     if (currentUser && currentUser.status === 'active') {
-      req.user = currentUser;
-      req.userRole = decoded.role;
+      const passwordChanged =
+        currentUser.changedPasswordAfter && currentUser.changedPasswordAfter(decoded.iat);
+      if (!passwordChanged && tokenVersionMatches(currentUser, decoded)) {
+        req.user = currentUser;
+        req.userRole = decoded.role;
+      }
     }
 
     next();
@@ -292,6 +304,14 @@ export const verifyRefreshToken = async (req, res, next) => {
 
     if (currentUser.status !== 'active') {
       return next(new AppError('Account is not active.', 403));
+    }
+
+    if (currentUser.changedPasswordAfter && currentUser.changedPasswordAfter(decoded.iat)) {
+      return next(new AppError('Password recently changed. Please login again.', 401));
+    }
+
+    if (!tokenVersionMatches(currentUser, decoded)) {
+      return next(new AppError('Session is no longer valid. Please login again.', 401));
     }
 
     // Attach user to request

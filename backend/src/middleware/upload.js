@@ -5,6 +5,7 @@ import fs from 'fs/promises';
 import crypto from 'crypto';
 import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
+import config from '../config/index.js';
 
 // Allowed file types
 const IMAGE_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
@@ -15,14 +16,14 @@ const ALLOWED_TYPES = [...IMAGE_TYPES, ...DOCUMENT_TYPES];
 const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
 const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10MB
 
-// Upload directories
+// Upload directories (absolute, shared with the storage service)
 const UPLOAD_DIRS = {
-  profilePictures: 'backend/uploads/profile-pictures',
-  eventBanners: 'backend/uploads/event-banners',
-  eventGallery: 'backend/uploads/event-gallery',
-  certificates: 'backend/certificates',
-  templates: 'backend/templates',
-  temp: 'backend/uploads/temp',
+  profilePictures: path.join(config.storage.uploadDir, 'profile-pictures'),
+  eventBanners: path.join(config.storage.uploadDir, 'event-banners'),
+  eventGallery: path.join(config.storage.uploadDir, 'event-gallery'),
+  certificates: config.storage.certificateDir,
+  templates: config.storage.templateDir,
+  temp: path.join(config.storage.uploadDir, 'temp'),
 };
 
 /**

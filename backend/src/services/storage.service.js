@@ -13,7 +13,7 @@ import { AppError } from '../middleware/errorHandler.js';
 class StorageService {
   constructor() {
     this.storageType = config.storage?.type || 'local';
-    this.baseDir = 'backend/uploads';
+    this.baseDir = config.storage?.uploadDir || 'uploads';
     this.publicUrl = config.app?.backendUrl || 'http://localhost:4000';
     this.initializeStorage();
   }

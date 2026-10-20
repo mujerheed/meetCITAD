@@ -427,10 +427,6 @@ export const validateQRScan = [
     .isJSON()
     .withMessage('Invalid QR data format'),
 
-  body('signature')
-    .notEmpty()
-    .withMessage('QR signature is required'),
-
   handleValidationErrors,
 ];
 

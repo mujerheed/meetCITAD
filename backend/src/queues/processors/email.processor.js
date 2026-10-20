@@ -5,6 +5,7 @@
 
 import { emailQueue } from '../index.js';
 import { emailService } from '../../services/index.js';
+import { User, Event, Certificate } from '../../models/index.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -21,6 +22,12 @@ export const EMAIL_JOB_TYPES = {
   CUSTOM: 'custom',
 };
 
+const resolveUser = async (data) =>
+  data.userId ? User.findById(data.userId) : null;
+
+const resolveEvent = async (data) =>
+  data.eventId ? Event.findById(data.eventId) : null;
+
 /**
  * Process email jobs
  */
@@ -33,38 +40,72 @@ emailQueue.process(async (job) => {
     let result;
 
     switch (type) {
-      case EMAIL_JOB_TYPES.WELCOME:
-        result = await emailService.sendWelcomeEmail(data);
+      case EMAIL_JOB_TYPES.WELCOME: {
+        const user = await resolveUser(data);
+        if (!user) throw new Error('User not found');
+        result = await emailService.sendOTPEmail(user, data.otp || data.verificationCode);
         break;
+      }
 
-      case EMAIL_JOB_TYPES.EVENT_REGISTRATION:
-        result = await emailService.sendEventRegistrationEmail(data);
+      case EMAIL_JOB_TYPES.EVENT_REGISTRATION: {
+        const [user, event] = await Promise.all([resolveUser(data), resolveEvent(data)]);
+        if (!user || !event) throw new Error('User or event not found');
+        result = await emailService.sendEventRegistrationEmail(
+          user,
+          event,
+          data.qrCodeUrl
+        );
         break;
+      }
 
-      case EMAIL_JOB_TYPES.EVENT_REMINDER:
-        result = await emailService.sendEventReminder(data);
+      case EMAIL_JOB_TYPES.EVENT_REMINDER: {
+        const [user, event] = await Promise.all([resolveUser(data), resolveEvent(data)]);
+        if (!user || !event) throw new Error('User or event not found');
+        result = await emailService.sendEventReminder(user, event);
         break;
+      }
 
       case EMAIL_JOB_TYPES.EVENT_UPDATE:
         result = await emailService.sendEmail({
           to: data.to,
           subject: `Event Update: ${data.eventTitle}`,
-          template: 'event-update',
-          data,
+          html: data.html,
+          text: data.text || `Update for ${data.eventTitle}`,
         });
         break;
 
-      case EMAIL_JOB_TYPES.CERTIFICATE_READY:
-        result = await emailService.sendCertificateEmail(data);
-        break;
+      case EMAIL_JOB_TYPES.CERTIFICATE_READY: {
+        const certificate = data.certificateId
+          ? await Certificate.findById(data.certificateId)
+          : null;
+        const user = await resolveUser(data);
+        const event = certificate?.eventId
+          ? await Event.findById(certificate.eventId)
+          : await resolveEvent(data);
 
-      case EMAIL_JOB_TYPES.PASSWORD_RESET:
-        result = await emailService.sendPasswordResetEmail(data);
-        break;
+        if (!user || !event) throw new Error('User or event not found');
 
-      case EMAIL_JOB_TYPES.FEEDBACK_REQUEST:
-        result = await emailService.sendFeedbackRequest(data);
+        result = await emailService.sendCertificateEmail(
+          user,
+          event,
+          certificate?.fileUrl || data.certificateUrl
+        );
         break;
+      }
+
+      case EMAIL_JOB_TYPES.PASSWORD_RESET: {
+        const user = await resolveUser(data);
+        if (!user) throw new Error('User not found');
+        result = await emailService.sendPasswordResetEmail(user, data.resetToken);
+        break;
+      }
+
+      case EMAIL_JOB_TYPES.FEEDBACK_REQUEST: {
+        const [user, event] = await Promise.all([resolveUser(data), resolveEvent(data)]);
+        if (!user || !event) throw new Error('User or event not found');
+        result = await emailService.sendFeedbackRequest(user, event);
+        break;
+      }
 
       case EMAIL_JOB_TYPES.CUSTOM:
         result = await emailService.sendEmail(data);
@@ -124,7 +165,7 @@ export const queueBulkEmails = async (emails) => {
     logger.info(`Queued ${result.length} bulk email jobs`);
     return result;
   } catch (error) {
-    logger.error('Error queuing bulk emails:', error);
+    logger.error('Error queuing bulk email jobs:', error);
     throw error;
   }
 };

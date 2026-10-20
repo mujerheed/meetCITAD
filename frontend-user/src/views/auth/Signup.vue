@@ -3,9 +3,12 @@
     <v-row align="center" justify="center">
       <v-col cols="12" sm="10" md="8" lg="6">
         <v-card class="pa-4">
-          <v-card-title class="text-h4 text-center mb-4">
-            Sign Up
+          <v-card-title class="text-h4 text-center mb-2" style="color: #0F2A44;">
+            Create Account
           </v-card-title>
+          <v-card-subtitle class="text-center mb-4" style="color: #6B7280;">
+            Join CITAD's community of stakeholders, professionals, and changemakers
+          </v-card-subtitle>
           
           <v-card-text>
             <v-form ref="formRef" v-model="valid" @submit.prevent="handleSubmit">
@@ -81,22 +84,25 @@
               ></v-text-field>
               
               <v-select
-                v-model="form.department"
-                label="Department"
-                :items="departments"
-                prepend-inner-icon="mdi-office-building"
+                v-model="form.participantType"
+                label="Participant Type"
+                :items="participantTypes"
+                prepend-inner-icon="mdi-account-group"
                 :rules="requiredRules"
                 required
                 variant="outlined"
                 class="mb-3"
+                hint="Select the category that best describes you"
+                persistent-hint
               ></v-select>
               
               <v-text-field
-                v-model="form.studentId"
-                label="Student ID"
-                prepend-inner-icon="mdi-badge-account"
+                v-model="form.organisation"
+                label="Organization/Institution (Optional)"
+                prepend-inner-icon="mdi-office-building"
                 variant="outlined"
                 class="mb-3"
+                hint="e.g., Company name, University, NGO, etc."
               ></v-text-field>
               
               <v-alert
@@ -158,18 +164,22 @@ const form = ref({
   password: '',
   confirmPassword: '',
   phone: '',
-  department: '',
-  studentId: '',
+  participantType: '',
+  organisation: '',
 })
 
-const departments = [
-  'Computer Science',
-  'Information Technology',
-  'Software Engineering',
-  'Artificial Intelligence',
-  'Cyber Security',
-  'Data Science',
-  'Business Administration',
+const participantTypes = [
+  'Student',
+  'Researcher',
+  'Civil Society Organization',
+  'Government Official',
+  'Business Professional',
+  'Journalist/Media',
+  'Community Leader',
+  'Tech Professional',
+  'Academic/Faculty',
+  'Development Practitioner',
+  'General Public',
   'Other'
 ]
 
@@ -188,10 +198,11 @@ const emailRules = [
 
 const passwordRules = [
   v => !!v || 'Password is required',
-  v => v.length >= 6 || 'Password must be at least 6 characters',
+  v => v.length >= 8 || 'Password must be at least 8 characters',
   v => /[A-Z]/.test(v) || 'Password must contain at least one uppercase letter',
   v => /[a-z]/.test(v) || 'Password must contain at least one lowercase letter',
   v => /[0-9]/.test(v) || 'Password must contain at least one number',
+  v => /[^A-Za-z0-9]/.test(v) || 'Password must contain at least one special character',
 ]
 
 const confirmPasswordRules = [
@@ -212,10 +223,16 @@ const handleSubmit = async () => {
   
   try {
     const { confirmPassword, ...userData } = form.value
-    await authStore.signup(userData)
+    await authStore.signup({
+      ...userData,
+      passwordConfirm: confirmPassword,
+    })
     
-    // Redirect to dashboard
-    router.push('/dashboard')
+    // The API requires email verification before the account can log in.
+    router.push({
+      name: 'VerifyEmail',
+      query: { email: form.value.email },
+    })
   } catch (error) {
     // Error is handled in the store
     console.error('Signup failed:', error)

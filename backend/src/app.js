@@ -11,9 +11,15 @@ import config from './config/index.js';
 import logger from './utils/logger.js';
 import errorHandler from './middleware/errorHandler.js';
 import { notFound } from './middleware/notFound.js';
+import { apiLimiter } from './middleware/rateLimiter.js';
 import apiRoutes from './routes/index.js';
 
 const app = express();
+
+// Honour X-Forwarded-For only when explicitly deployed behind a trusted proxy.
+if (config.trustProxy) {
+  app.set('trust proxy', config.trustProxy);
+}
 
 // ============ SECURITY MIDDLEWARE ============
 // Set security HTTP headers
@@ -38,8 +44,8 @@ app.use(hpp());
 
 // ============ GENERAL MIDDLEWARE ============
 // Body parser
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
 
 // Cookie parser
 app.use(cookieParser(config.security.cookieSecret));
@@ -55,10 +61,15 @@ if (config.isDevelopment) {
 }
 
 // ============ STATIC FILES ============
+// Uploaded event images are public by design. Certificate PDFs are deliberately
+// NOT served statically: they are private records delivered through the
+// authenticated /certificates/:id/download endpoint.
 app.use('/uploads', express.static(config.storage.uploadDir));
-app.use('/certificates', express.static(config.storage.certificateDir));
 
 // ============ API ROUTES ============
+// Broad API guard. Sensitive endpoints add stricter per-route limiters.
+app.use('/api', apiLimiter);
+
 // Health check
 app.get('/health', (req, res) => {
   res.status(200).json({

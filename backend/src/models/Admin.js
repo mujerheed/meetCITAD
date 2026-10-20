@@ -135,6 +135,10 @@ const AdminSchema = new Schema(
     resetToken: String,
     resetTokenExpiration: Date,
     passwordChangedAt: Date,
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
 
     // Security
     loginAttempts: {
@@ -167,7 +171,7 @@ AdminSchema.virtual('isLocked').get(function () {
 });
 
 AdminSchema.virtual('recentActions').get(function () {
-  return this.actionsLog.slice(-10).reverse(); // Last 10 actions
+  return (this.actionsLog || []).slice(-10).reverse(); // Last 10 actions
 });
 
 // Instance Methods
@@ -199,6 +203,14 @@ AdminSchema.methods.hasPermission = function (permission) {
 
   // Check if admin has the specific permission
   return this.permissions.includes(permission);
+};
+
+AdminSchema.methods.changedPasswordAfter = function (JWTTimestamp) {
+  if (this.passwordChangedAt) {
+    const changedTimestamp = parseInt(this.passwordChangedAt.getTime() / 1000, 10);
+    return JWTTimestamp < changedTimestamp;
+  }
+  return false;
 };
 
 AdminSchema.methods.incrementLoginAttempts = function () {
@@ -246,7 +258,10 @@ AdminSchema.pre('save', async function (next) {
 
 // Pre-save: Set default permissions based on role
 AdminSchema.pre('save', function (next) {
-  if (!this.isModified('role') && this.permissions.length > 0) return next();
+  // Preserve explicitly supplied permissions. Otherwise, when a role changes,
+  // apply that role's default permission preset.
+  if (this.isModified('permissions')) return next();
+  if (!this.isNew && !this.isModified('role')) return next();
 
   const rolePermissions = {
     super_admin: [

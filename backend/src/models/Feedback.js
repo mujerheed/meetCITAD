@@ -139,6 +139,19 @@ const FeedbackSchema = new Schema(
     },
     reviewedAt: Date,
 
+    // Admin response to the participant
+    response: {
+      message: {
+        type: String,
+        maxlength: [2000, 'Response cannot exceed 2000 characters'],
+      },
+      respondedBy: {
+        type: Schema.Types.ObjectId,
+        ref: 'Admin',
+      },
+      respondedAt: Date,
+    },
+
     // Flags
     isFlagged: {
       type: Boolean,
@@ -180,6 +193,7 @@ FeedbackSchema.virtual('npsCategory').get(function () {
 });
 
 FeedbackSchema.virtual('averageRating').get(function () {
+  if (!this.ratings) return 0;
   const ratings = Object.values(this.ratings).filter(r => typeof r === 'number');
   if (ratings.length === 0) return 0;
   const sum = ratings.reduce((acc, rating) => acc + rating, 0);
@@ -187,11 +201,11 @@ FeedbackSchema.virtual('averageRating').get(function () {
 });
 
 FeedbackSchema.virtual('isPositive').get(function () {
-  return this.ratings.overall >= 4;
+  return (this.ratings?.overall || 0) >= 4;
 });
 
 FeedbackSchema.virtual('isNegative').get(function () {
-  return this.ratings.overall <= 2;
+  return (this.ratings?.overall || 0) <= 2;
 });
 
 // Instance Methods

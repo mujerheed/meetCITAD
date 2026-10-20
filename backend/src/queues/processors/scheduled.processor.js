@@ -47,7 +47,7 @@ scheduledQueue.process(async (job) => {
         tomorrowEnd.setHours(tomorrowEnd.getHours() + 1);
 
         const upcomingEvents = await Event.find({
-          date: { $gte: tomorrow, $lt: tomorrowEnd },
+          startDateTime: { $gte: tomorrow, $lt: tomorrowEnd },
           status: 'published',
         });
 
@@ -56,19 +56,16 @@ scheduledQueue.process(async (job) => {
         for (const event of upcomingEvents) {
           // Get registered users
           const users = await User.find({
-            'registeredEvents.event': event._id,
-            'registeredEvents.status': 'registered',
+            'registeredEvents.eventId': event._id,
+            'registeredEvents.status': 'confirmed',
           });
 
           for (const user of users) {
             // Queue email reminder
             reminderJobs.push(
               queueEmail(EMAIL_JOB_TYPES.EVENT_REMINDER, {
-                to: user.email,
-                name: user.firstName,
-                eventTitle: event.title,
-                eventDate: event.date,
-                eventVenue: event.venue,
+                userId: user._id,
+                eventId: event._id,
                 reminderType: '24h',
               })
             );
@@ -98,7 +95,7 @@ scheduledQueue.process(async (job) => {
         oneHourEnd.setMinutes(oneHourEnd.getMinutes() + 15);
 
         const upcomingEvents = await Event.find({
-          date: { $gte: oneHourFromNow, $lt: oneHourEnd },
+          startDateTime: { $gte: oneHourFromNow, $lt: oneHourEnd },
           status: 'published',
         });
 
@@ -106,8 +103,8 @@ scheduledQueue.process(async (job) => {
 
         for (const event of upcomingEvents) {
           const users = await User.find({
-            'registeredEvents.event': event._id,
-            'registeredEvents.status': 'registered',
+            'registeredEvents.eventId': event._id,
+            'registeredEvents.status': 'confirmed',
           });
 
           for (const user of users) {
@@ -134,7 +131,7 @@ scheduledQueue.process(async (job) => {
         yesterday.setHours(0, 0, 0, 0);
 
         const completedEvents = await Event.find({
-          date: { $gte: yesterday, $lt: new Date() },
+          startDateTime: { $gte: yesterday, $lt: new Date() },
           status: 'published',
         });
 
@@ -142,16 +139,14 @@ scheduledQueue.process(async (job) => {
 
         for (const event of completedEvents) {
           const users = await User.find({
-            'registeredEvents.event': event._id,
+            'registeredEvents.eventId': event._id,
             'registeredEvents.attended': true,
           });
 
           for (const user of users) {
             feedbackJobs.push(
               queueEmail(EMAIL_JOB_TYPES.FEEDBACK_REQUEST, {
-                to: user.email,
-                name: user.firstName,
-                eventTitle: event.title,
+                userId: user._id,
                 eventId: event._id,
               })
             );

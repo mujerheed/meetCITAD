@@ -3,6 +3,13 @@ import crypto from 'crypto';
 
 const { Schema } = mongoose;
 
+const stripInternalFileLocation = (doc, ret) => {
+  // The stored value is a filesystem location. Clients should download through
+  // the authenticated API instead of receiving server paths.
+  delete ret.fileUrl;
+  return ret;
+};
+
 const CertificateSchema = new Schema(
   {
     // Certificate Identification
@@ -137,8 +144,8 @@ const CertificateSchema = new Schema(
   },
   {
     timestamps: true,
-    toJSON: { virtuals: true },
-    toObject: { virtuals: true },
+    toJSON: { virtuals: true, transform: stripInternalFileLocation },
+    toObject: { virtuals: true, transform: stripInternalFileLocation },
   }
 );
 

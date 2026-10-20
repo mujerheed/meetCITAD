@@ -10,6 +10,11 @@ const connectRedis = async () => {
       socket: {
         host: config.redis.host,
         port: config.redis.port,
+        // In development, fail fast so the API can start without Redis.
+        // Production keeps retrying to survive transient outages.
+        reconnectStrategy: config.isProduction
+          ? (retries) => Math.min(retries * 100, 3000)
+          : false,
       },
       password: config.redis.password,
       database: config.redis.db,

@@ -2,13 +2,31 @@
   <v-container class="fill-height">
     <v-row align="center" justify="center">
       <v-col cols="12" sm="8" md="6" lg="4">
-        <v-card class="pa-4">
-          <v-card-title class="text-h4 text-center mb-4">
+        <v-card class="pa-4" elevation="1">
+          <v-card-title class="text-h5 text-center mb-2">
             Reset Password
           </v-card-title>
-          
+          <v-card-subtitle class="text-center mb-4">
+            Choose a new password for your meetCITAD account.
+          </v-card-subtitle>
+
           <v-card-text>
-            <v-form ref="formRef" v-model="valid" @submit.prevent="handleSubmit">
+            <v-alert v-if="!token" type="error" variant="tonal" class="mb-4">
+              This reset link is missing its token. Please request a new password
+              reset email.
+            </v-alert>
+
+            <v-alert v-if="success" type="success" variant="tonal" class="mb-4">
+              Your password has been reset. You can now sign in with your new
+              password.
+            </v-alert>
+
+            <v-form
+              v-if="!success"
+              ref="formRef"
+              v-model="valid"
+              @submit.prevent="handleSubmit"
+            >
               <v-text-field
                 v-model="form.password"
                 label="New Password"
@@ -20,8 +38,10 @@
                 required
                 variant="outlined"
                 class="mb-3"
+                hint="At least 8 characters with uppercase, lowercase and a number"
+                persistent-hint
               ></v-text-field>
-              
+
               <v-text-field
                 v-model="form.confirmPassword"
                 label="Confirm Password"
@@ -34,7 +54,7 @@
                 variant="outlined"
                 class="mb-3"
               ></v-text-field>
-              
+
               <v-alert
                 v-if="error"
                 type="error"
@@ -45,19 +65,29 @@
               >
                 {{ error }}
               </v-alert>
-              
+
               <v-btn
                 type="submit"
-                color="primary"
+                color="accent"
+                variant="flat"
+                elevation="0"
                 block
                 size="large"
                 :loading="loading"
-                :disabled="!valid"
+                :disabled="!valid || !token"
                 class="mb-3"
               >
                 Reset Password
               </v-btn>
             </v-form>
+
+            <v-row class="mt-2">
+              <v-col cols="12" class="text-center">
+                <router-link to="/login" class="text-decoration-none">
+                  Back to Login
+                </router-link>
+              </v-col>
+            </v-row>
           </v-card-text>
         </v-card>
       </v-col>
@@ -66,18 +96,21 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
-const router = useRouter()
 const route = useRoute()
+const router = useRouter()
 const authStore = useAuthStore()
 
 const formRef = ref(null)
 const valid = ref(false)
 const showPassword = ref(false)
 const showConfirmPassword = ref(false)
+const success = ref(false)
+
+const token = computed(() => route.params.token || route.query.token || '')
 
 const form = ref({
   password: '',
@@ -88,24 +121,25 @@ const loading = computed(() => authStore.loading)
 const error = computed(() => authStore.error)
 
 const passwordRules = [
-  v => !!v || 'Password is required',
-  v => v.length >= 6 || 'Password must be at least 6 characters',
+  (value) => Boolean(value) || 'Password is required',
+  (value) => (value || '').length >= 8 || 'Password must be at least 8 characters',
+  (value) => /[A-Z]/.test(value) || 'Include at least one uppercase letter',
+  (value) => /[a-z]/.test(value) || 'Include at least one lowercase letter',
+  (value) => /[0-9]/.test(value) || 'Include at least one number',
 ]
 
 const confirmPasswordRules = [
-  v => !!v || 'Please confirm your password',
-  v => v === form.value.password || 'Passwords do not match',
+  (value) => Boolean(value) || 'Please confirm your password',
+  (value) => value === form.value.password || 'Passwords do not match',
 ]
 
 const handleSubmit = async () => {
-  if (!valid.value) return
-  
+  if (!valid.value || !token.value) return
+
   try {
-    const token = route.params.token
-    await authStore.resetPassword(token, form.value.password)
-    
-    // Redirect to login
-    router.push('/login')
+    await authStore.resetPassword(token.value, form.value.password)
+    success.value = true
+    window.setTimeout(() => router.push('/login'), 2500)
   } catch (error) {
     console.error('Password reset failed:', error)
   }

@@ -21,13 +21,19 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/verify-email',
+    name: 'VerifyEmail',
+    component: () => import('@/views/auth/VerifyEmail.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/forgot-password',
     name: 'ForgotPassword',
     component: () => import('@/views/auth/ForgotPassword.vue'),
     meta: { requiresAuth: false }
   },
   {
-    path: '/reset-password/:token',
+    path: '/reset-password/:token?',
     name: 'ResetPassword',
     component: () => import('@/views/auth/ResetPassword.vue'),
     meta: { requiresAuth: false }
@@ -37,6 +43,12 @@ const routes = [
     name: 'Events',
     component: () => import('@/views/events/EventsList.vue'),
     meta: { requiresAuth: false }
+  },
+  {
+    path: '/events/:id/feedback',
+    name: 'EventFeedback',
+    component: () => import('@/views/events/EventFeedback.vue'),
+    meta: { requiresAuth: true }
   },
   {
     path: '/events/:id',
@@ -63,6 +75,12 @@ const routes = [
     meta: { requiresAuth: true }
   },
   {
+    path: '/my-events/:id/qr',
+    name: 'EventQR',
+    component: () => import('@/views/user/EventQR.vue'),
+    meta: { requiresAuth: true }
+  },
+  {
     path: '/certificates',
     name: 'Certificates',
     component: () => import('@/views/user/Certificates.vue'),
@@ -73,6 +91,12 @@ const routes = [
     name: 'Notifications',
     component: () => import('@/views/user/Notifications.vue'),
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/verify/:hash?',
+    name: 'CertificateVerify',
+    component: () => import('@/views/certificates/CertificateVerify.vue'),
+    meta: { requiresAuth: false }
   },
   {
     path: '/:pathMatch(.*)*',

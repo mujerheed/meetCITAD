@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import api from '@/api'
+import api, { getErrorMessage } from '@/api'
 
 export const useEventStore = defineStore('event', {
   state: () => ({
@@ -24,21 +24,35 @@ export const useEventStore = defineStore('event', {
   }),
 
   getters: {
-    upcomingEvents: (state) => state.events.filter(
-      event => new Date(event.startDate) > new Date()
-    ),
-    pastEvents: (state) => state.events.filter(
-      event => new Date(event.endDate) < new Date()
-    ),
-    registeredEvents: (state) => state.myEvents.filter(
-      event => event.registrationStatus === 'registered'
-    ),
+    upcomingEvents: (state) =>
+      state.events.filter((event) => {
+        const start = new Date(event.startDate || event.startDateTime)
+        return !Number.isNaN(start.getTime()) && start >= new Date()
+      }),
+    pastEvents: (state) =>
+      state.events.filter((event) => {
+        const end = new Date(event.endDate || event.startDate || event.date)
+        return !Number.isNaN(end.getTime()) && end < new Date()
+      }),
+    registeredEvents: (state) =>
+      state.myEvents.filter(
+        (event) =>
+          !event.attended &&
+          ['confirmed', 'registered', 'pending', 'attended'].includes(
+            event.registration?.status
+          )
+      ),
+    attendedEvents: (state) =>
+      state.myEvents.filter(
+        (event) => event.attended || event.registration?.attended
+      ),
   },
 
   actions: {
     async fetchEvents(params = {}) {
       this.loading = true
       this.error = null
+
       try {
         const queryParams = {
           page: this.pagination.page,
@@ -46,17 +60,14 @@ export const useEventStore = defineStore('event', {
           ...this.filters,
           ...params,
         }
-        
-        const response = await api.events.getAll(queryParams)
-        this.events = response.data.events
-        this.pagination = {
-          page: response.data.pagination.page,
-          limit: response.data.pagination.limit,
-          total: response.data.pagination.total,
-          totalPages: response.data.pagination.totalPages,
-        }
+
+        const { events, pagination } = await api.events.getAll(queryParams)
+
+        this.events = events
+        this.pagination = pagination
+        return events
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to fetch events'
+        this.error = getErrorMessage(error, 'Failed to load events.')
         throw error
       } finally {
         this.loading = false
@@ -66,26 +77,28 @@ export const useEventStore = defineStore('event', {
     async fetchEventById(id) {
       this.loading = true
       this.error = null
+
       try {
-        const response = await api.events.getById(id)
-        this.currentEvent = response.data.event
-        return response.data.event
+        const event = await api.events.getById(id)
+        this.currentEvent = event
+        return event
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to fetch event'
+        this.error = getErrorMessage(error, 'Failed to load the event.')
         throw error
       } finally {
         this.loading = false
       }
     },
 
-    async fetchMyEvents() {
+    async fetchMyEvents(params = {}) {
       this.loading = true
       this.error = null
+
       try {
-        const response = await api.events.getMyEvents()
-        this.myEvents = response.data.events
+        this.myEvents = await api.events.getMyEvents(params)
+        return this.myEvents
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to fetch your events'
+        this.error = getErrorMessage(error, 'Failed to load your events.')
         throw error
       } finally {
         this.loading = false
@@ -95,20 +108,17 @@ export const useEventStore = defineStore('event', {
     async registerForEvent(eventId) {
       this.loading = true
       this.error = null
+
       try {
         const response = await api.events.register(eventId)
-        // Update the event in the list
-        const eventIndex = this.events.findIndex(e => e._id === eventId)
-        if (eventIndex !== -1) {
-          this.events[eventIndex] = response.data.event
-        }
-        // Update current event if it's the same
+
         if (this.currentEvent?._id === eventId) {
-          this.currentEvent = response.data.event
+          await this.fetchEventById(eventId)
         }
-        return response.data
+
+        return response
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to register for event'
+        this.error = getErrorMessage(error, 'Failed to register for this event.')
         throw error
       } finally {
         this.loading = false
@@ -118,20 +128,18 @@ export const useEventStore = defineStore('event', {
     async unregisterFromEvent(eventId) {
       this.loading = true
       this.error = null
+
       try {
         const response = await api.events.unregister(eventId)
-        // Update the event in the list
-        const eventIndex = this.events.findIndex(e => e._id === eventId)
-        if (eventIndex !== -1) {
-          this.events[eventIndex] = response.data.event
-        }
-        // Update current event if it's the same
+        this.myEvents = this.myEvents.filter((event) => event._id !== eventId)
+
         if (this.currentEvent?._id === eventId) {
-          this.currentEvent = response.data.event
+          await this.fetchEventById(eventId)
         }
-        return response.data
+
+        return response
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to unregister from event'
+        this.error = getErrorMessage(error, 'Failed to cancel your registration.')
         throw error
       } finally {
         this.loading = false
@@ -141,20 +149,32 @@ export const useEventStore = defineStore('event', {
     async checkInToEvent(eventId, code) {
       this.loading = true
       this.error = null
+
       try {
         const response = await api.events.checkIn(eventId, code)
-        return response.data
+        return response
       } catch (error) {
-        this.error = error.response?.data?.message || 'Failed to check in'
+        this.error = getErrorMessage(error, 'Failed to check in.')
         throw error
       } finally {
         this.loading = false
       }
     },
 
+    async fetchEventQR(eventId) {
+      this.error = null
+
+      try {
+        return await api.events.getQR(eventId)
+      } catch (error) {
+        this.error = getErrorMessage(error, 'Could not generate the QR code.')
+        throw error
+      }
+    },
+
     setFilters(filters) {
       this.filters = { ...this.filters, ...filters }
-      this.pagination.page = 1 // Reset to first page when filters change
+      this.pagination.page = 1
     },
 
     setPage(page) {

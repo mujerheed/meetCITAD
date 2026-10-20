@@ -20,11 +20,17 @@ class SMSService {
    */
   initializeTwilio() {
     try {
-      if (config.sms.accountSid && config.sms.authToken) {
+      const configured =
+        config.sms.accountSid &&
+        config.sms.authToken &&
+        !String(config.sms.accountSid).startsWith('your_') &&
+        !String(config.sms.authToken).startsWith('your_');
+
+      if (configured) {
         this.client = twilio(config.sms.accountSid, config.sms.authToken);
         logger.info('Twilio initialized successfully');
       } else {
-        logger.warn('Twilio credentials not found. SMS service disabled.');
+        logger.warn('Twilio credentials not configured. SMS service disabled.');
       }
     } catch (error) {
       logger.error('Error initializing Twilio:', error);

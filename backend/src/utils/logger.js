@@ -21,6 +21,21 @@ const logFormat = winston.format.combine(
   winston.format.json()
 );
 
+// Safe JSON serializer for logs (errors and HTTP clients contain circular refs)
+const safeStringify = (value) => {
+  const seen = new WeakSet();
+  return JSON.stringify(value, (key, item) => {
+    if (item instanceof Error) {
+      return { name: item.name, message: item.message, stack: item.stack };
+    }
+    if (typeof item === 'object' && item !== null) {
+      if (seen.has(item)) return '[Circular]';
+      seen.add(item);
+    }
+    return item;
+  });
+};
+
 // Console format for development
 const consoleFormat = winston.format.combine(
   winston.format.colorize(),
@@ -28,7 +43,11 @@ const consoleFormat = winston.format.combine(
   winston.format.printf(({ timestamp, level, message, ...meta }) => {
     let msg = `${timestamp} [${level}]: ${message}`;
     if (Object.keys(meta).length > 0) {
-      msg += ` ${JSON.stringify(meta)}`;
+      try {
+        msg += ` ${safeStringify(meta)}`;
+      } catch {
+        msg += ' [meta could not be serialized]';
+      }
     }
     return msg;
   })

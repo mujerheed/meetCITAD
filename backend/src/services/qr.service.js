@@ -13,8 +13,26 @@ import { AppError } from '../middleware/errorHandler.js';
 
 class QRService {
   constructor() {
-    this.qrDir = 'backend/uploads/qr-codes';
-    this.signatureKey = config.security.qrSignatureKey || process.env.QR_SIGNATURE_KEY || 'default-qr-key';
+    this.qrDir = path.join(config.storage.uploadDir, 'qr-codes');
+
+    const configuredKey = config.security.qrSignatureKey;
+    if (configuredKey) {
+      this.signatureKey = configuredKey;
+    } else if (config.isProduction) {
+      throw new Error('QR_SIGNATURE_KEY is required in production');
+    } else {
+      // Never use a shared, publicly-known default. In development the key is
+      // derived from the JWT secret so local QR codes remain stable across
+      // restarts while still being unique to this environment.
+      this.signatureKey = crypto
+        .createHash('sha256')
+        .update(`${config.jwt.secret}:meetcitad-development-qr`)
+        .digest('hex');
+      logger.warn(
+        'QR_SIGNATURE_KEY is not set; using a development-only key derived from JWT_SECRET'
+      );
+    }
+
     this.initializeQRDirectory();
   }
 

@@ -21,14 +21,20 @@ class EmailService {
    */
   initializeMailjet() {
     try {
-      if (config.email.apiKey && config.email.apiSecret) {
+      const configured =
+        config.email.apiKey &&
+        config.email.apiSecret &&
+        !String(config.email.apiKey).startsWith('your_') &&
+        !String(config.email.apiSecret).startsWith('your_');
+
+      if (configured) {
         this.mailjet = Mailjet.apiConnect(
           config.email.apiKey,
           config.email.apiSecret
         );
         logger.info('Mailjet initialized successfully');
       } else {
-        logger.warn('Mailjet credentials not found. Email service disabled.');
+        logger.warn('Mailjet credentials not configured. Email service disabled.');
       }
     } catch (error) {
       logger.error('Error initializing Mailjet:', error);
@@ -156,6 +162,58 @@ class EmailService {
   }
 
   /**
+   * Send email verification OTP
+   * @param {Object} user - User document
+   * @param {string} otp - 6-digit verification code
+   * @returns {Promise<Object>}
+   */
+  async sendOTPEmail(user, otp) {
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <style>
+          body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+          .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+          .header { background: #0F2A44; color: white; padding: 24px; text-align: center; }
+          .content { padding: 24px; background: #f9f9f9; }
+          .code { display: inline-block; padding: 16px 28px; background: #ffffff; border: 2px solid #C9A44C; font-size: 32px; letter-spacing: 8px; font-weight: bold; color: #0F2A44; margin: 20px 0; }
+          .footer { text-align: center; padding: 20px; font-size: 12px; color: #666; }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <h1>meetCITAD</h1>
+            <p>Email Verification</p>
+          </div>
+          <div class="content">
+            <p>Hello ${user.fullname || user.firstName || 'there'},</p>
+            <p>Use the verification code below to activate your meetCITAD account:</p>
+            <div style="text-align:center;">
+              <span class="code">${otp}</span>
+            </div>
+            <p>This code expires in 10 minutes. If you did not create this account, you can safely ignore this email.</p>
+            <p>Best regards,<br>The meetCITAD Team</p>
+          </div>
+          <div class="footer">
+            <p>&copy; ${new Date().getFullYear()} CITAD. All rights reserved.</p>
+            <p>Kano, Nigeria</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
+
+    return this.sendEmail({
+      to: user.email,
+      subject: 'Your meetCITAD verification code',
+      text: `Your meetCITAD verification code is ${otp}. It expires in 10 minutes.`,
+      html,
+    });
+  }
+
+  /**
    * Send event registration confirmation
    * @param {Object} user - User object
    * @param {Object} event - Event object
@@ -174,6 +232,12 @@ class EmailService {
       hour: '2-digit',
       minute: '2-digit',
     });
+
+    const qrSrc = qrCodeUrl
+      ? qrCodeUrl.startsWith('data:')
+        ? qrCodeUrl
+        : `${config.app.backendUrl}${qrCodeUrl}`
+      : '';
 
     const html = `
       <!DOCTYPE html>
@@ -208,7 +272,7 @@ class EmailService {
             <div class="qr-code">
               <h3>Your Event Ticket</h3>
               <p>Show this QR code at the venue for check-in:</p>
-              <img src="${config.app.backendUrl}${qrCodeUrl}" alt="Event QR Code" style="max-width: 300px;" />
+              ${qrSrc ? `<img src="${qrSrc}" alt="Event QR Code" style="max-width: 300px;" />` : ''}
             </div>
             <p>We look forward to seeing you at the event!</p>
             <p>Best regards,<br>The meetCITAD Team</p>

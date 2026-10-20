@@ -1,6 +1,6 @@
 import express from 'express';
 import { userController } from '../controllers/index.js';
-import { protect } from '../middleware/index.js';
+import { protect, uploadLimiter } from '../middleware/index.js';
 import { validateUpdateProfile } from '../middleware/validation.js';
 import { uploadProfilePicture, processProfilePicture, handleMulterError } from '../middleware/upload.js';
 
@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.get('/profile', protect, userController.getProfile.bind(userController));
 router.put('/profile', protect, validateUpdateProfile, userController.updateProfile.bind(userController));
-router.post('/profile/picture', protect, uploadProfilePicture, processProfilePicture, handleMulterError, userController.uploadProfilePicture.bind(userController));
+router.post('/profile/picture', protect, uploadLimiter, uploadProfilePicture, processProfilePicture, handleMulterError, userController.uploadProfilePicture.bind(userController));
 router.delete('/profile/picture', protect, userController.deleteProfilePicture.bind(userController));
 router.put('/preferences', protect, userController.updatePreferences.bind(userController));
 

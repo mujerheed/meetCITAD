@@ -11,7 +11,7 @@
       <v-col cols="12">
         <v-card color="primary" dark class="pa-6">
           <h2 class="text-h4 mb-2">
-            Welcome back, {{ currentUser?.firstName }}!
+            Welcome back, {{ currentUser?.firstName || authStore.displayName }}!
           </h2>
           <p class="text-h6">
             You have {{ registeredEventsCount }} upcoming events
@@ -37,7 +37,7 @@
           <div class="text-subtitle-1">Certificates Earned</div>
         </v-card>
       </v-col>
-      
+
       <v-col cols="12" md="4">
         <v-card class="pa-6 text-center">
           <v-icon size="48" color="info" class="mb-3">mdi-calendar-clock</v-icon>
@@ -104,7 +104,7 @@
       >
         <v-card>
           <v-img
-            :src="event.banner || 'https://via.placeholder.com/400x200'"
+            :src="event.banner"
             height="150"
             cover
           ></v-img>
@@ -132,23 +132,36 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { useEventStore } from '@/stores/event'
+import api from '@/api'
 
 const authStore = useAuthStore()
 const eventStore = useEventStore()
+
+const statistics = ref(null)
 
 const currentUser = computed(() => authStore.currentUser)
 const myEvents = computed(() => eventStore.myEvents)
 const loading = computed(() => eventStore.loading)
 
-const registeredEventsCount = computed(() => 
-  myEvents.value.filter(e => new Date(e.startDate) > new Date()).length
+const registeredEventsCount = computed(() =>
+  myEvents.value.filter(
+    (event) => !event.attended && new Date(event.endDate || event.startDate) >= new Date()
+  ).length
 )
 
-const upcomingEventsCount = computed(() => registeredEventsCount.value)
-const certificatesCount = computed(() => 0) // TODO: Implement certificates count
+const upcomingEventsCount = computed(
+  () => statistics.value?.upcomingEvents ?? registeredEventsCount.value
+)
+
+const certificatesCount = computed(
+  () =>
+    statistics.value?.certificates ??
+    authStore.currentUser?.stats?.totalCertificates ??
+    myEvents.value.filter((event) => event.certificateIssued).length
+)
 
 const formatDate = (date) => {
   return new Date(date).toLocaleDateString('en-US', {
@@ -159,10 +172,14 @@ const formatDate = (date) => {
 }
 
 onMounted(async () => {
-  try {
-    await eventStore.fetchMyEvents()
-  } catch (error) {
-    console.error('Failed to fetch events:', error)
+  const results = await Promise.allSettled([
+    eventStore.fetchMyEvents(),
+    api.user.getStatistics(),
+    !authStore.currentUser ? authStore.fetchProfile() : Promise.resolve(),
+  ])
+
+  if (results[1].status === 'fulfilled') {
+    statistics.value = results[1].value
   }
 })
 </script>

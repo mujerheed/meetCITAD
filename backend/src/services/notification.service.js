@@ -164,8 +164,8 @@ class NotificationService {
       relatedEvent: event._id,
       channels: {
         inApp: { enabled: true },
-        email: { enabled: user.preferences?.notifications?.email !== false },
-        sms: { enabled: user.preferences?.notifications?.sms === true },
+        email: { enabled: user.preferences?.emailNotifications !== false },
+        sms: { enabled: user.preferences?.smsNotifications === true },
       },
       priority: 'high',
     });
@@ -174,12 +174,12 @@ class NotificationService {
     const results = await this.sendNotification(notification, user);
 
     // Send dedicated email with QR code
-    if (user.preferences?.notifications?.email !== false) {
+    if (user.preferences?.emailNotifications !== false) {
       await emailService.sendEventRegistrationEmail(user, event, qrCodeUrl);
     }
 
     // Send SMS if enabled
-    if (user.preferences?.notifications?.sms === true && user.phone) {
+    if (user.preferences?.smsNotifications === true && user.phone) {
       await smsService.sendEventRegistrationSMS(
         user.phone,
         user.fullname,
@@ -206,8 +206,8 @@ class NotificationService {
       relatedEvent: event._id,
       channels: {
         inApp: { enabled: true },
-        email: { enabled: user.preferences?.notifications?.email !== false },
-        sms: { enabled: user.preferences?.notifications?.sms === true },
+        email: { enabled: user.preferences?.emailNotifications !== false },
+        sms: { enabled: user.preferences?.smsNotifications === true },
       },
       priority: 'normal',
     });
@@ -215,11 +215,11 @@ class NotificationService {
     const results = await this.sendNotification(notification, user);
 
     // Send dedicated reminder emails/SMS
-    if (user.preferences?.notifications?.email !== false) {
+    if (user.preferences?.emailNotifications !== false) {
       await emailService.sendEventReminder(user, event);
     }
 
-    if (user.preferences?.notifications?.sms === true && user.phone) {
+    if (user.preferences?.smsNotifications === true && user.phone) {
       await smsService.sendEventReminderSMS(
         user.phone,
         user.fullname,
@@ -249,8 +249,8 @@ class NotificationService {
       actionLabel: 'Download Certificate',
       channels: {
         inApp: { enabled: true },
-        email: { enabled: user.preferences?.notifications?.email !== false },
-        sms: { enabled: user.preferences?.notifications?.sms === true },
+        email: { enabled: user.preferences?.emailNotifications !== false },
+        sms: { enabled: user.preferences?.smsNotifications === true },
       },
       priority: 'normal',
     });
@@ -258,11 +258,11 @@ class NotificationService {
     const results = await this.sendNotification(notification, user);
 
     // Send dedicated emails/SMS
-    if (user.preferences?.notifications?.email !== false) {
+    if (user.preferences?.emailNotifications !== false) {
       await emailService.sendCertificateEmail(user, event, certificateUrl);
     }
 
-    if (user.preferences?.notifications?.sms === true && user.phone) {
+    if (user.preferences?.smsNotifications === true && user.phone) {
       await smsService.sendCertificateSMS(user.phone, user.fullname, event.title);
     }
 
@@ -286,7 +286,7 @@ class NotificationService {
       actionLabel: 'Give Feedback',
       channels: {
         inApp: { enabled: true },
-        email: { enabled: user.preferences?.notifications?.email !== false },
+        email: { enabled: user.preferences?.emailNotifications !== false },
       },
       priority: 'low',
     });
@@ -294,7 +294,7 @@ class NotificationService {
     const results = await this.sendNotification(notification, user);
 
     // Send email
-    if (user.preferences?.notifications?.email !== false) {
+    if (user.preferences?.emailNotifications !== false) {
       await emailService.sendFeedbackRequest(user, event);
     }
 
@@ -356,7 +356,7 @@ class NotificationService {
       type = null,
     } = options;
 
-    const query = { userId, status: 'sent' };
+    const query = { userId, status: { $ne: 'cancelled' } };
 
     if (unreadOnly) {
       query.read = false;

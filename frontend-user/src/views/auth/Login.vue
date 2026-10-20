@@ -34,6 +34,17 @@
               ></v-text-field>
               
               <v-alert
+                v-if="route.query.reason === 'password-changed'"
+                type="success"
+                variant="tonal"
+                class="mb-3"
+                icon="mdi-shield-check-outline"
+              >
+                Your password was updated and all previous sessions were signed
+                out. Please sign in with your new password.
+              </v-alert>
+
+              <v-alert
                 v-if="error"
                 type="error"
                 variant="tonal"
@@ -42,6 +53,16 @@
                 @click:close="authStore.clearError()"
               >
                 {{ error }}
+                <div v-if="needsVerification" class="mt-2">
+                  <v-btn
+                    variant="text"
+                    color="error"
+                    size="small"
+                    :to="{ name: 'VerifyEmail', query: { email: form.email } }"
+                  >
+                    Verify your email
+                  </v-btn>
+                </div>
               </v-alert>
               
               <v-btn
@@ -97,6 +118,9 @@ const form = ref({
 
 const loading = computed(() => authStore.loading)
 const error = computed(() => authStore.error)
+const needsVerification = computed(() =>
+  /verif/i.test(error.value || '')
+)
 
 const emailRules = [
   v => !!v || 'Email is required',

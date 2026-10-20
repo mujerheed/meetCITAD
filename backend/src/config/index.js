@@ -15,6 +15,10 @@ const config = {
   isDevelopment: process.env.NODE_ENV === 'development',
   isTest: process.env.NODE_ENV === 'test',
 
+  // Set to true when the API is behind exactly one trusted reverse proxy.
+  // This is required for accurate client IPs in rate limiting.
+  trustProxy: process.env.TRUST_PROXY === 'true' ? 1 : false,
+
   // Server
   port: parseInt(process.env.PORT, 10) || 3000,
   apiVersion: process.env.API_VERSION || 'v1',
@@ -49,6 +53,13 @@ const config = {
     accessExpiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
     refreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
     cookieExpiresIn: parseInt(process.env.JWT_COOKIE_EXPIRES_IN, 10) || 7,
+
+    // Aliases used by the auth middleware
+    accessTokenSecret: process.env.JWT_SECRET,
+    refreshTokenSecret: process.env.JWT_REFRESH_SECRET,
+    accessTokenExpiry: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
+    refreshTokenExpiry: process.env.JWT_REFRESH_EXPIRES_IN || '7d',
+    expiresIn: process.env.JWT_ACCESS_EXPIRES_IN || '15m',
   },
 
   // OTP
@@ -65,6 +76,11 @@ const config = {
     },
     from: process.env.EMAIL_FROM || 'noreply@citad.org',
     fromName: process.env.EMAIL_FROM_NAME || 'meetCITAD',
+
+    // Aliases used by the email service
+    apiKey: process.env.MAILJET_API_KEY,
+    apiSecret: process.env.MAILJET_SECRET_KEY,
+    fromEmail: process.env.EMAIL_FROM || 'noreply@citad.org',
   },
 
   // SMS
@@ -74,14 +90,19 @@ const config = {
       authToken: process.env.TWILIO_AUTH_TOKEN,
       phoneNumber: process.env.TWILIO_PHONE_NUMBER,
     },
+
+    // Aliases used by the SMS service
+    accountSid: process.env.TWILIO_ACCOUNT_SID,
+    authToken: process.env.TWILIO_AUTH_TOKEN,
+    fromPhone: process.env.TWILIO_PHONE_NUMBER,
   },
 
   // Storage
   storage: {
     type: process.env.STORAGE_TYPE || 'local', // 'local', 's3', 'cloudinary'
-    uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '..', 'uploads'),
-    certificateDir: process.env.CERTIFICATE_DIR || path.join(__dirname, '..', 'certificates'),
-    templateDir: process.env.TEMPLATE_DIR || path.join(__dirname, '..', 'templates'),
+    uploadDir: process.env.UPLOAD_DIR || path.join(__dirname, '..', '..', 'uploads'),
+    certificateDir: process.env.CERTIFICATE_DIR || path.join(__dirname, '..', '..', 'certificates'),
+    templateDir: process.env.TEMPLATE_DIR || path.join(__dirname, '..', '..', 'templates'),
     
     // AWS S3
     s3: {
@@ -105,6 +126,7 @@ const config = {
     sessionSecret: process.env.SESSION_SECRET,
     cookieSecret: process.env.COOKIE_SECRET,
     csrfSecret: process.env.CSRF_SECRET,
+    qrSignatureKey: process.env.QR_SIGNATURE_KEY,
   },
 
   // CORS
@@ -116,7 +138,7 @@ const config = {
   // Rate Limiting
   rateLimit: {
     windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000, // 15 minutes
-    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 100,
+    maxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS, 10) || 1000,
     authMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 5,
     scanMax: parseInt(process.env.SCAN_RATE_LIMIT_MAX, 10) || 100,
   },
@@ -125,6 +147,16 @@ const config = {
   frontend: {
     userUrl: process.env.FRONTEND_USER_URL || 'http://localhost:5173',
     adminUrl: process.env.FRONTEND_ADMIN_URL || 'http://localhost:5174',
+  },
+
+  // Application URLs (aliases used by email/QR services)
+  app: {
+    name: process.env.APP_NAME || 'meetCITAD',
+    frontendUrl: process.env.FRONTEND_USER_URL || 'http://localhost:5173',
+    adminUrl: process.env.FRONTEND_ADMIN_URL || 'http://localhost:5174',
+    backendUrl:
+      process.env.BACKEND_URL ||
+      `http://localhost:${parseInt(process.env.PORT, 10) || 3000}`,
   },
 
   // Certificate
@@ -166,6 +198,19 @@ if (!config.jwt.secret || !config.jwt.refreshSecret) {
 
 if (!config.mongodb.uri) {
   throw new Error('MongoDB URI must be defined in environment variables');
+}
+
+if (config.isProduction) {
+  const qrKey = config.security.qrSignatureKey || '';
+  if (qrKey.length < 32 || /default|change[-_]?me|your[-_]/i.test(qrKey)) {
+    throw new Error(
+      'QR_SIGNATURE_KEY must be a strong, unique secret of at least 32 characters in production'
+    );
+  }
+
+  if (!config.security.cookieSecret) {
+    throw new Error('COOKIE_SECRET must be defined in production');
+  }
 }
 
 export default config;

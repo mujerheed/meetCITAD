@@ -1,18 +1,21 @@
 /**
  * Queue Controller
- * Manages queue monitoring and administration
+ * Manages queue monitoring and administration.
+ *
+ * Queue modules are loaded lazily so importing the API (for example in tests or
+ * when Redis is unavailable) does not open Bull/Redis connections.
  */
 
-import {
-  allQueues,
-  getQueueStats,
-  getAllQueuesStats,
-  cleanAllQueues,
-  pauseAllQueues,
-  resumeAllQueues,
-} from '../queues/index.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
+
+let queuesModulePromise;
+const loadQueues = () => {
+  if (!queuesModulePromise) {
+    queuesModulePromise = import('../queues/index.js');
+  }
+  return queuesModulePromise;
+};
 
 class QueueController {
   /**
@@ -21,6 +24,7 @@ class QueueController {
    */
   async getAllQueuesStatus(req, res, next) {
     try {
+      const { getAllQueuesStats } = await loadQueues();
       const stats = await getAllQueuesStats();
 
       res.json({
@@ -41,6 +45,7 @@ class QueueController {
    */
   async getQueueStatus(req, res, next) {
     try {
+      const { allQueues, getQueueStats } = await loadQueues();
       const { queueName } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);
@@ -81,6 +86,7 @@ class QueueController {
    */
   async getJobDetails(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName, jobId } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);
@@ -124,6 +130,7 @@ class QueueController {
    */
   async pauseQueue(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);
@@ -150,6 +157,7 @@ class QueueController {
    */
   async resumeQueue(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);
@@ -176,6 +184,7 @@ class QueueController {
    */
   async pauseAllQueuesController(req, res, next) {
     try {
+      const { pauseAllQueues } = await loadQueues();
       await pauseAllQueues();
 
       logger.info(`All queues paused by admin ${req.user.id}`);
@@ -195,6 +204,7 @@ class QueueController {
    */
   async resumeAllQueuesController(req, res, next) {
     try {
+      const { resumeAllQueues } = await loadQueues();
       await resumeAllQueues();
 
       logger.info(`All queues resumed by admin ${req.user.id}`);
@@ -214,6 +224,7 @@ class QueueController {
    */
   async cleanQueue(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName } = req.params;
       const { grace = 3600000, status = 'completed' } = req.body; // Default 1 hour
 
@@ -242,6 +253,7 @@ class QueueController {
    */
   async cleanAllQueuesController(req, res, next) {
     try {
+      const { cleanAllQueues } = await loadQueues();
       const { grace = 3600000 } = req.body;
 
       await cleanAllQueues(grace);
@@ -263,6 +275,7 @@ class QueueController {
    */
   async retryJob(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName, jobId } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);
@@ -294,6 +307,7 @@ class QueueController {
    */
   async removeJob(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName, jobId } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);
@@ -325,6 +339,7 @@ class QueueController {
    */
   async emptyQueue(req, res, next) {
     try {
+      const { allQueues } = await loadQueues();
       const { queueName } = req.params;
 
       const queue = allQueues.find((q) => q.name === queueName);

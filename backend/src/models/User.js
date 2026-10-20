@@ -52,6 +52,10 @@ const UserSchema = new Schema(
     resetTokenExpiration: Date,
     passwordChangedAt: Date,
     passwordHistory: [String], // Last 5 hashed passwords
+    tokenVersion: {
+      type: Number,
+      default: 0,
+    },
 
     // Profile Information
     phone: {
@@ -66,6 +70,23 @@ const UserSchema = new Schema(
     organisation: {
       type: String,
       maxlength: [200, 'Organisation name cannot exceed 200 characters'],
+    },
+    participantType: {
+      type: String,
+      enum: [
+        'Student',
+        'Researcher',
+        'Civil Society Organization',
+        'Government Official',
+        'Business Professional',
+        'Journalist/Media',
+        'Community Leader',
+        'Tech Professional',
+        'Academic/Faculty',
+        'Development Practitioner',
+        'General Public',
+        'Other'
+      ],
     },
     jobTitle: {
       type: String,
@@ -135,6 +156,16 @@ const UserSchema = new Schema(
           default: 'confirmed',
         },
         qrCode: String,
+        attended: {
+          type: Boolean,
+          default: false,
+        },
+        attendedAt: Date,
+        checkInTime: Date,
+        certificateIssued: {
+          type: Boolean,
+          default: false,
+        },
       },
     ],
     attendedEvents: [
@@ -231,7 +262,7 @@ UserSchema.index({ 'stats.totalEventsAttended': -1 }); // For leaderboards
 
 // Virtual Properties
 UserSchema.virtual('attendanceRate').get(function () {
-  if (this.stats.totalEventsRegistered === 0) return 0;
+  if (!this.stats || !this.stats.totalEventsRegistered) return 0;
   return ((this.stats.totalEventsAttended / this.stats.totalEventsRegistered) * 100).toFixed(2);
 });
 

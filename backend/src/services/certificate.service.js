@@ -1,10 +1,12 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs/promises';
+import { createWriteStream } from 'fs';
 import path from 'path';
 import { Certificate, CertificateTemplate, Event, User } from '../models/index.js';
 import qrService from './qr.service.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
+import config from '../config/index.js';
 
 /**
  * Certificate Service
@@ -13,7 +15,7 @@ import { AppError } from '../middleware/errorHandler.js';
 
 class CertificateService {
   constructor() {
-    this.certificatesDir = 'backend/certificates';
+    this.certificatesDir = config.storage.certificateDir || 'certificates';
     this.initializeCertificatesDir();
   }
 
@@ -49,6 +51,10 @@ class CertificateService {
       }
 
       // Get template
+      if (template && typeof template.validateRequiredFields !== 'function') {
+        template = await CertificateTemplate.findById(template);
+      }
+
       if (!template) {
         template = event.certificateTemplateId
           ? await CertificateTemplate.findById(event.certificateTemplateId)
@@ -56,10 +62,40 @@ class CertificateService {
       }
 
       if (!template) {
-        throw new AppError('No certificate template found', 404);
+        // Create a sensible default template so certificate generation works
+        // out of the box before admins design their own.
+        template = await CertificateTemplate.create({
+          name: 'CITAD Certificate of Participation',
+          description: 'Default institutional certificate template',
+          type: 'participation',
+          isDefault: true,
+          content: {
+            title: 'Certificate of Participation',
+            bodyText:
+              'This is to certify that {{recipientName}} participated in {{eventTitle}} held on {{eventDate}} at {{eventVenue}}.',
+          },
+          signatures: [
+            { name: 'Director', title: 'Centre for Information Technology and Development' },
+          ],
+        });
       }
 
-      // Prepare certificate data
+      // Create the certificate record first so identifiers can be rendered.
+      const certificate = new Certificate({
+        userId: user._id,
+        eventId: event._id,
+        templateId: template._id,
+        recipientName: user.fullname,
+        recipientEmail: user.email,
+        eventTitle: event.title,
+        eventDate: event.startDateTime,
+        eventVenue: event.venue?.name,
+      });
+
+      certificate.certificateNumber = certificate.generateCertificateNumber();
+      certificate.verificationHash = certificate.generateVerificationHash();
+
+      // Prepare certificate data (must include every required template field)
       const certificateData = {
         recipientName: user.fullname,
         eventTitle: event.title,
@@ -68,7 +104,8 @@ class CertificateService {
           month: 'long',
           day: 'numeric',
         }),
-        eventVenue: event.venue.name,
+        eventVenue: event.venue?.name || 'CITAD, Kano',
+        certificateNumber: certificate.certificateNumber,
         issuedDate: new Date().toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'long',
@@ -82,26 +119,16 @@ class CertificateService {
         throw new AppError(`Missing required fields: ${validation.missingFields.join(', ')}`, 400);
       }
 
-      // Create certificate record
-      const certificate = new Certificate({
-        userId: user._id,
-        eventId: event._id,
-        templateId: template._id,
-        recipientName: user.fullname,
-        recipientEmail: user.email,
-        eventTitle: event.title,
-        eventDate: event.startDateTime,
-        eventVenue: event.venue.name,
-      });
-
       // Generate verification QR code
       const qrDataURL = await qrService.generateCertificateVerificationQR(certificate);
 
       // Generate PDF
       const pdfPath = await this.generatePDF(certificate, template, certificateData, qrDataURL);
 
-      // Update certificate with file info
-      certificate.fileUrl = pdfPath;
+      // Update certificate with file info. Store only the filename; the
+      // authenticated download endpoint resolves it against the configured
+      // certificate directory. Never persist an absolute server path.
+      certificate.fileUrl = path.basename(pdfPath);
       certificate.fileName = path.basename(pdfPath);
       certificate.qrCode = qrDataURL;
 
@@ -110,6 +137,19 @@ class CertificateService {
 
       // Increment template usage
       await template.incrementUsage();
+
+      // Mark the user's registration mirror as certified.
+      const registration = (user.registeredEvents || []).find(
+        (item) =>
+          (item.eventId?._id || item.eventId)?.toString() === event._id.toString()
+      );
+      if (registration) {
+        registration.certificateIssued = true;
+        user.stats.totalCertificates = user.registeredEvents.filter(
+          (item) => item.certificateIssued
+        ).length;
+        await user.save();
+      }
 
       logger.info(`Certificate generated for user ${user._id} and event ${event._id}`);
       return certificate;
@@ -146,7 +186,7 @@ class CertificateService {
         });
 
         // Pipe to file
-        const stream = fs.createWriteStream(filePath);
+        const stream = createWriteStream(filePath);
         doc.pipe(stream);
 
         // Set background color
@@ -405,7 +445,10 @@ class CertificateService {
       await certificate.incrementDownloadCount();
 
       return {
-        filePath: path.join(this.certificatesDir, certificate.fileName),
+        filePath: path.join(
+          config.storage.certificateDir,
+          path.basename(certificate.fileName || certificate.fileUrl || '')
+        ),
         fileName: certificate.fileName,
         mimeType: 'application/pdf',
       };
@@ -447,8 +490,12 @@ class CertificateService {
    */
   async deleteCertificateFile(filePath) {
     try {
-      await fs.unlink(filePath);
-      logger.info(`Deleted certificate file: ${filePath}`);
+      const resolved = filePath?.startsWith('/certificates/')
+        ? path.join(this.certificatesDir, path.basename(filePath))
+        : filePath;
+
+      await fs.unlink(resolved);
+      logger.info(`Deleted certificate file: ${resolved}`);
       return true;
     } catch (error) {
       logger.error('Error deleting certificate file:', error);

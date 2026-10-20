@@ -5,6 +5,7 @@
 
 import { notificationQueue } from '../index.js';
 import { notificationService } from '../../services/index.js';
+import { User, Event, Certificate } from '../../models/index.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -20,9 +21,18 @@ export const NOTIFICATION_JOB_TYPES = {
   BULK: 'bulk',
 };
 
-/**
- * Process notification jobs
- */
+const requireDocuments = async (data) => {
+  const [user, event] = await Promise.all([
+    data.userId ? User.findById(data.userId) : null,
+    data.eventId ? Event.findById(data.eventId) : null,
+  ]);
+
+  if (data.userId && !user) throw new Error('User not found');
+  if (data.eventId && !event) throw new Error('Event not found');
+
+  return { user, event };
+};
+
 notificationQueue.process(async (job) => {
   const { type, data } = job.data;
 
@@ -36,45 +46,76 @@ notificationQueue.process(async (job) => {
         result = await notificationService.createNotification(data);
         break;
 
-      case NOTIFICATION_JOB_TYPES.EVENT_REGISTRATION:
+      case NOTIFICATION_JOB_TYPES.EVENT_REGISTRATION: {
+        const { user, event } = await requireDocuments(data);
         result = await notificationService.sendEventRegistrationNotification(
-          data.userId,
-          data.eventId
+          user,
+          event,
+          data.qrCodeUrl
         );
         break;
+      }
 
-      case NOTIFICATION_JOB_TYPES.EVENT_REMINDER:
-        result = await notificationService.sendEventReminder(
-          data.userId,
-          data.eventId,
-          data.reminderType
-        );
+      case NOTIFICATION_JOB_TYPES.EVENT_REMINDER: {
+        const { user, event } = await requireDocuments(data);
+        result = await notificationService.sendEventReminder(user, event);
         break;
+      }
 
-      case NOTIFICATION_JOB_TYPES.CERTIFICATE_READY:
+      case NOTIFICATION_JOB_TYPES.CERTIFICATE_READY: {
+        const certificate = data.certificateId
+          ? await Certificate.findById(data.certificateId)
+          : null;
+        const user = data.userId ? await User.findById(data.userId) : null;
+        const event = certificate?.eventId
+          ? await Event.findById(certificate.eventId)
+          : data.eventId
+            ? await Event.findById(data.eventId)
+            : null;
+
+        if (!user || !event) throw new Error('User or event not found');
+
         result = await notificationService.sendCertificateNotification(
-          data.userId,
-          data.certificateId
+          user,
+          event,
+          certificate?.fileUrl || data.certificateUrl
         );
         break;
+      }
 
-      case NOTIFICATION_JOB_TYPES.FEEDBACK_REQUEST:
-        result = await notificationService.sendFeedbackRequest(
-          data.userId,
-          data.eventId
-        );
+      case NOTIFICATION_JOB_TYPES.FEEDBACK_REQUEST: {
+        const { user, event } = await requireDocuments(data);
+        result = await notificationService.sendFeedbackRequest(user, event);
         break;
+      }
 
-      case NOTIFICATION_JOB_TYPES.BROADCAST:
-        result = await notificationService.sendNotification({
-          ...data,
-          userId: null, // Broadcast to all
+      case NOTIFICATION_JOB_TYPES.BROADCAST: {
+        const users = await User.find({ status: 'active' });
+        result = await notificationService.sendBulkNotifications(users, {
+          title: data.title,
+          message: data.message,
+          type: data.type || 'announcement',
+          channels: data.channels || { inApp: { enabled: true } },
+          sentBy: data.sentBy,
         });
         break;
+      }
 
-      case NOTIFICATION_JOB_TYPES.BULK:
-        result = await notificationService.sendBulkNotifications(data.notifications);
+      case NOTIFICATION_JOB_TYPES.BULK: {
+        const entries = data.notifications || [];
+        result = [];
+        for (const entry of entries) {
+          const user = await User.findById(entry.userId);
+          if (!user) continue;
+          const notification = await notificationService.createNotification({
+            ...entry,
+            userId: user._id,
+          });
+          await notificationService.sendNotification(notification, user);
+          result.push({ userId: user._id, success: true });
+        }
         break;
+      }
 
       default:
         throw new Error(`Unknown notification job type: ${type}`);
@@ -126,7 +167,7 @@ export const queueBulkNotifications = async (notifications) => {
     logger.info(`Queued ${result.length} bulk notification jobs`);
     return result;
   } catch (error) {
-    logger.error('Error queuing bulk notifications:', error);
+    logger.error('Error queuing bulk notification jobs:', error);
     throw error;
   }
 };

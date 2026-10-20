@@ -1,12 +1,45 @@
-import { User, Event } from '../models/index.js';
-import { storageService, notificationService } from '../services/index.js';
+import { User, Event, Certificate } from '../models/index.js';
+import { storageService, notificationService, qrService } from '../services/index.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
  * User Controller
- * Handles user profile and event registration operations
+ * Handles user profile and event registration operations.
+ *
+ * Event.registeredUsers is the canonical registration store. User.registeredEvents
+ * is kept in sync as a denormalized mirror for fast profile/dashboard reads.
  */
+
+const toId = (value) => (value?._id ? value._id.toString() : value?.toString());
+
+const findEventRegistration = (event, userId) =>
+  (event.registeredUsers || []).find(
+    (registration) =>
+      toId(registration.userId) === userId.toString() &&
+      registration.status !== 'cancelled'
+  );
+
+const findUserRegistration = (user, eventId) =>
+  (user.registeredEvents || []).find(
+    (registration) => toId(registration.eventId) === eventId.toString()
+  );
+
+const isEventPast = (event) => {
+  const end = event.endDateTime || event.startDateTime;
+  return end ? new Date(end) < new Date() : false;
+};
+
+const syncUserStats = (user) => {
+  const registrations = user.registeredEvents || [];
+  const attended = registrations.filter((registration) => registration.attended);
+
+  user.stats.totalEventsRegistered = registrations.length;
+  user.stats.totalEventsAttended = attended.length;
+  user.stats.totalCertificates = registrations.filter(
+    (registration) => registration.certificateIssued
+  ).length;
+};
 
 class UserController {
   /**
@@ -17,7 +50,10 @@ class UserController {
     try {
       const user = await User.findById(req.user.id)
         .select('-password')
-        .populate('registeredEvents.event', 'title date venue');
+        .populate({
+          path: 'registeredEvents.eventId',
+          select: 'title description startDateTime endDateTime venue bannerImage status',
+        });
 
       if (!user) {
         throw new AppError('User not found', 404);
@@ -38,20 +74,50 @@ class UserController {
    */
   async updateProfile(req, res, next) {
     try {
-      const { firstName, lastName, phone, bio, organization, jobTitle } = req.body;
+      const {
+        fullname,
+        firstName,
+        lastName,
+        phone,
+        biography,
+        bio,
+        organisation,
+        organization,
+        jobTitle,
+        participantType,
+        dateOfBirth,
+        gender,
+        address,
+      } = req.body;
 
       const user = await User.findById(req.user.id);
       if (!user) {
         throw new AppError('User not found', 404);
       }
 
-      // Update allowed fields
-      if (firstName) user.firstName = firstName;
-      if (lastName) user.lastName = lastName;
-      if (phone) user.phone = phone;
-      if (bio !== undefined) user.bio = bio;
-      if (organization !== undefined) user.organization = organization;
+      if (fullname) {
+        user.fullname = fullname.trim();
+      } else if (firstName || lastName) {
+        const parts = user.fullname ? user.fullname.split(/\s+/) : [];
+        user.fullname = [
+          firstName || parts[0] || '',
+          lastName || parts.slice(1).join(' ') || '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+      }
+
+      if (phone !== undefined) user.phone = phone;
+      if (organisation !== undefined) user.organisation = organisation;
+      if (organization !== undefined) user.organisation = organization;
       if (jobTitle !== undefined) user.jobTitle = jobTitle;
+      if (participantType !== undefined) user.participantType = participantType;
+      if (biography !== undefined) user.biography = biography;
+      if (bio !== undefined) user.biography = bio;
+      if (dateOfBirth !== undefined) user.dateOfBirth = dateOfBirth;
+      if (gender !== undefined) user.gender = gender;
+      if (address !== undefined) user.address = address;
 
       await user.save();
 
@@ -73,35 +139,39 @@ class UserController {
    */
   async uploadProfilePicture(req, res, next) {
     try {
-      if (!req.file) {
-        throw new AppError('No file uploaded', 400);
-      }
-
       const user = await User.findById(req.user.id);
       if (!user) {
         throw new AppError('User not found', 404);
       }
 
-      // Delete old profile picture if exists
-      if (user.profilePicture) {
-        await storageService.deleteFile(user.profilePicture);
+      let profileImage = req.body?.profileImage;
+
+      // Fallback: process the in-memory upload directly through storage.
+      if (!profileImage && req.file?.buffer) {
+        const result = await storageService.uploadFile(req.file.buffer, {
+          directory: 'profile-pictures',
+          fileName: `${user._id}-${Date.now()}.jpg`,
+          mimeType: req.file.mimetype,
+          processImage: true,
+          imageOptions: {
+            width: 400,
+            height: 400,
+            format: 'jpeg',
+            quality: 90,
+          },
+        });
+        profileImage = result.url;
       }
 
-      // Upload new profile picture
-      const result = await storageService.uploadFile(req.file.buffer, {
-        directory: 'profile-pictures',
-        fileName: `${user._id}-${Date.now()}.jpg`,
-        mimeType: req.file.mimetype,
-        processImage: true,
-        imageOptions: {
-          width: 400,
-          height: 400,
-          format: 'jpeg',
-          quality: 90,
-        },
-      });
+      if (!profileImage) {
+        throw new AppError('No file uploaded', 400);
+      }
 
-      user.profilePicture = result.url;
+      if (user.profileImage) {
+        await storageService.deleteFile(user.profileImage);
+      }
+
+      user.profileImage = profileImage;
       await user.save();
 
       logger.info(`Profile picture updated for user: ${user.email}`);
@@ -110,7 +180,8 @@ class UserController {
         success: true,
         message: 'Profile picture uploaded successfully',
         data: {
-          profilePicture: result.fullUrl,
+          profilePicture: profileImage,
+          profileImage,
         },
       });
     } catch (error) {
@@ -129,12 +200,12 @@ class UserController {
         throw new AppError('User not found', 404);
       }
 
-      if (!user.profilePicture) {
+      if (!user.profileImage) {
         throw new AppError('No profile picture to delete', 400);
       }
 
-      await storageService.deleteFile(user.profilePicture);
-      user.profilePicture = null;
+      await storageService.deleteFile(user.profileImage);
+      user.profileImage = undefined;
       await user.save();
 
       logger.info(`Profile picture deleted for user: ${user.email}`);
@@ -154,22 +225,24 @@ class UserController {
    */
   async updatePreferences(req, res, next) {
     try {
-      const { emailNotifications, smsNotifications, pushNotifications } = req.body;
+      const body = req.body || {};
+      const nested = body.notifications || body.preferences?.notifications || {};
+
+      const email = body.emailNotifications ?? body.email ?? nested.email;
+      const sms = body.smsNotifications ?? body.sms ?? nested.sms;
+      const push = body.pushNotifications ?? body.push ?? nested.push;
+      const marketing = body.marketingEmails;
 
       const user = await User.findById(req.user.id);
       if (!user) {
         throw new AppError('User not found', 404);
       }
 
-      if (emailNotifications !== undefined) {
-        user.preferences.notifications.email = emailNotifications;
-      }
-      if (smsNotifications !== undefined) {
-        user.preferences.notifications.sms = smsNotifications;
-      }
-      if (pushNotifications !== undefined) {
-        user.preferences.notifications.push = pushNotifications;
-      }
+      if (email !== undefined) user.preferences.emailNotifications = email;
+      if (sms !== undefined) user.preferences.smsNotifications = sms;
+      if (push !== undefined) user.preferences.pushNotifications = push;
+      if (marketing !== undefined) user.preferences.marketingEmails = marketing;
+      if (body.language !== undefined) user.preferences.language = body.language;
 
       await user.save();
 
@@ -178,9 +251,7 @@ class UserController {
       res.json({
         success: true,
         message: 'Preferences updated successfully',
-        data: {
-          preferences: user.preferences,
-        },
+        data: { preferences: user.preferences },
       });
     } catch (error) {
       next(error);
@@ -209,44 +280,70 @@ class UserController {
         throw new AppError('Event not found', 404);
       }
 
-      // Check if event is active
-      if (event.status !== 'published') {
+      if (!['published', 'ongoing'].includes(event.status)) {
         throw new AppError('Event is not available for registration', 400);
       }
 
-      // Check if registration is open
-      if (event.registrationDeadline && new Date() > event.registrationDeadline) {
-        throw new AppError('Registration deadline has passed', 400);
+      if (isEventPast(event)) {
+        throw new AppError('This event has already ended', 400);
       }
 
-      // Check if already registered
-      const alreadyRegistered = user.registeredEvents.some(
-        (reg) => reg.event.toString() === eventId
-      );
-
-      if (alreadyRegistered) {
-        throw new AppError('Already registered for this event', 400);
+      if (event.registrationCloses && new Date() > event.registrationCloses) {
+        throw new AppError('Registration for this event has closed', 400);
       }
 
-      // Check capacity
-      if (event.capacity && event.registeredCount >= event.capacity) {
-        throw new AppError('Event is full', 400);
+      if (findEventRegistration(event, userId)) {
+        throw new AppError('You are already registered for this event', 400);
       }
 
-      // Register user
-      user.registeredEvents.push({
-        event: eventId,
+      const confirmedCount = event.registeredUsers.filter(
+        (registration) => registration.status === 'confirmed'
+      ).length;
+
+      if (event.capacity && confirmedCount >= event.capacity) {
+        throw new AppError('This event is fully booked', 400);
+      }
+
+      // Generate a personal ticket QR for the confirmation email.
+      let ticket = null;
+      try {
+        ticket = await qrService.generateUserTicketQR(user, event);
+      } catch (qrError) {
+        logger.warn(`Ticket QR generation failed for ${user.email}: ${qrError.message}`);
+      }
+
+      event.registeredUsers.push({
+        userId: user._id,
         registeredAt: new Date(),
-        status: 'registered',
+        status: event.requireApproval ? 'pending' : 'confirmed',
+        qrSignature: ticket?.qrSignature || undefined,
       });
-      await user.save();
-
-      // Update event registration count
-      event.registeredCount += 1;
+      event.registrationCount = event.registeredUsers.filter(
+        (registration) => registration.status === 'confirmed'
+      ).length;
       await event.save();
 
-      // Send registration notification
-      await notificationService.sendEventRegistrationNotification(userId, eventId);
+      user.registeredEvents.push({
+        eventId: event._id,
+        registeredAt: new Date(),
+        status: event.requireApproval ? 'pending' : 'confirmed',
+        attended: false,
+        certificateIssued: false,
+      });
+      syncUserStats(user);
+      await user.save();
+
+      try {
+        await notificationService.sendEventRegistrationNotification(
+          user,
+          event,
+          ticket?.qrCodeUrl
+        );
+      } catch (notificationError) {
+        logger.warn(
+          `Registration notification failed for ${user.email}: ${notificationError.message}`
+        );
+      }
 
       logger.info(`User ${user.email} registered for event: ${event.title}`);
 
@@ -257,8 +354,12 @@ class UserController {
           event: {
             id: event._id,
             title: event.title,
-            date: event.date,
+            startDateTime: event.startDateTime,
             venue: event.venue,
+          },
+          registration: {
+            status: event.requireApproval ? 'pending' : 'confirmed',
+            registeredAt: new Date(),
           },
         },
       });
@@ -289,33 +390,36 @@ class UserController {
         throw new AppError('Event not found', 404);
       }
 
-      // Find registration
-      const registrationIndex = user.registeredEvents.findIndex(
-        (reg) => reg.event.toString() === eventId
-      );
-
-      if (registrationIndex === -1) {
-        throw new AppError('Not registered for this event', 400);
+      const eventRegistration = findEventRegistration(event, userId);
+      if (!eventRegistration) {
+        throw new AppError('You are not registered for this event', 400);
       }
 
-      // Check if already attended
-      const registration = user.registeredEvents[registrationIndex];
-      if (registration.attended) {
+      const attended = event.attendedUsers.some(
+        (attendance) => toId(attendance.userId) === userId.toString()
+      );
+
+      if (attended) {
         throw new AppError('Cannot unregister after attending the event', 400);
       }
 
-      // Check if event has already occurred
-      if (new Date() > event.date) {
+      if (isEventPast(event)) {
         throw new AppError('Cannot unregister from past events', 400);
       }
 
-      // Unregister user
-      user.registeredEvents.splice(registrationIndex, 1);
-      await user.save();
-
-      // Update event registration count
-      event.registeredCount = Math.max(0, event.registeredCount - 1);
+      event.registeredUsers = event.registeredUsers.filter(
+        (registration) => toId(registration.userId) !== userId.toString()
+      );
+      event.registrationCount = event.registeredUsers.filter(
+        (registration) => registration.status === 'confirmed'
+      ).length;
       await event.save();
+
+      user.registeredEvents = user.registeredEvents.filter(
+        (registration) => toId(registration.eventId) !== eventId.toString()
+      );
+      syncUserStats(user);
+      await user.save();
 
       logger.info(`User ${user.email} unregistered from event: ${event.title}`);
 
@@ -337,33 +441,46 @@ class UserController {
       const { status, upcoming } = req.query;
 
       const user = await User.findById(req.user.id).populate({
-        path: 'registeredEvents.event',
-        select: 'title description date venue capacity status banner',
+        path: 'registeredEvents.eventId',
+        select:
+          'title description shortDescription startDateTime endDateTime venue capacity registrationCount bannerImage category status certificateEnabled',
       });
 
       if (!user) {
         throw new AppError('User not found', 404);
       }
 
-      let events = user.registeredEvents;
+      let events = [...user.registeredEvents];
 
-      // Filter by status
       if (status) {
-        events = events.filter((reg) => reg.status === status);
+        events = events.filter((registration) => registration.status === status);
       }
 
-      // Filter upcoming events
       if (upcoming === 'true') {
-        events = events.filter((reg) => {
-          return reg.event && new Date(reg.event.date) > new Date();
+        events = events.filter((registration) => {
+          const end =
+            registration.eventId?.endDateTime ||
+            registration.eventId?.startDateTime;
+          return end && new Date(end) >= new Date();
         });
       }
+
+      const payload = events.map((registration) => ({
+        event: registration.eventId,
+        eventId: toId(registration.eventId),
+        status: registration.status,
+        registeredAt: registration.registeredAt,
+        attended: Boolean(registration.attended),
+        attendedAt: registration.attendedAt || registration.checkInTime,
+        certificateIssued: Boolean(registration.certificateIssued),
+        qrCode: registration.qrCode,
+      }));
 
       res.json({
         success: true,
         data: {
-          total: events.length,
-          events,
+          total: payload.length,
+          events: payload,
         },
       });
     } catch (error) {
@@ -378,21 +495,40 @@ class UserController {
   async getEventStatus(req, res, next) {
     try {
       const { eventId } = req.params;
+      const userId = req.user.id;
 
-      const user = await User.findById(req.user.id);
+      const [user, event] = await Promise.all([
+        User.findById(userId),
+        Event.findById(eventId),
+      ]);
+
       if (!user) {
         throw new AppError('User not found', 404);
       }
 
-      const registration = user.registeredEvents.find(
-        (reg) => reg.event.toString() === eventId
+      if (!event) {
+        throw new AppError('Event not found', 404);
+      }
+
+      const registration =
+        findUserRegistration(user, eventId) || findEventRegistration(event, userId);
+      const attended = event.attendedUsers.some(
+        (attendance) => toId(attendance.userId) === userId.toString()
       );
 
       res.json({
         success: true,
         data: {
-          isRegistered: !!registration,
-          registration: registration || null,
+          isRegistered: Boolean(registration),
+          attended,
+          registration: registration
+            ? {
+                status: registration.status,
+                registeredAt: registration.registeredAt,
+                attended,
+                certificateIssued: Boolean(registration.certificateIssued),
+              }
+            : null,
         },
       });
     } catch (error) {
@@ -406,25 +542,18 @@ class UserController {
    */
   async getCertificates(req, res, next) {
     try {
-      const user = await User.findById(req.user.id).populate({
-        path: 'registeredEvents.event',
-        select: 'title date',
-      });
-
-      if (!user) {
-        throw new AppError('User not found', 404);
-      }
-
-      // Filter events with certificates
-      const eventsWithCertificates = user.registeredEvents.filter(
-        (reg) => reg.attended && reg.certificateIssued
-      );
+      const certificates = await Certificate.find({
+        userId: req.user.id,
+        status: { $ne: 'revoked' },
+      })
+        .populate('eventId', 'title startDateTime endDateTime venue bannerImage')
+        .sort('-issuedDate');
 
       res.json({
         success: true,
         data: {
-          total: eventsWithCertificates.length,
-          certificates: eventsWithCertificates,
+          total: certificates.length,
+          certificates,
         },
       });
     } catch (error) {
@@ -438,23 +567,39 @@ class UserController {
    */
   async getUserStatistics(req, res, next) {
     try {
-      const user = await User.findById(req.user.id);
+      const user = await User.findById(req.user.id).populate({
+        path: 'registeredEvents.eventId',
+        select: 'startDateTime endDateTime',
+      });
+
       if (!user) {
         throw new AppError('User not found', 404);
       }
 
-      const stats = {
+      const certificates = await Certificate.countDocuments({
+        userId: user._id,
+        status: { $ne: 'revoked' },
+      });
+
+      const now = new Date();
+      const upcoming = user.registeredEvents.filter((registration) => {
+        if (registration.attended) return false;
+        const end =
+          registration.eventId?.endDateTime ||
+          registration.eventId?.startDateTime;
+        return end && new Date(end) >= now;
+      }).length;
+
+      const statistics = {
         totalRegistrations: user.registeredEvents.length,
-        attendedEvents: user.registeredEvents.filter((reg) => reg.attended).length,
-        upcomingEvents: user.registeredEvents.filter((reg) => {
-          return !reg.attended && reg.status === 'registered';
-        }).length,
-        certificates: user.registeredEvents.filter((reg) => reg.certificateIssued).length,
+        attendedEvents: user.registeredEvents.filter((r) => r.attended).length,
+        upcomingEvents: upcoming,
+        certificates,
       };
 
       res.json({
         success: true,
-        data: { statistics: stats },
+        data: { statistics },
       });
     } catch (error) {
       next(error);
@@ -475,15 +620,19 @@ class UserController {
         throw new AppError('User not found', 404);
       }
 
-      // Verify password
       const isPasswordValid = await user.comparePassword(password);
       if (!isPasswordValid) {
         throw new AppError('Invalid password', 401);
       }
 
-      // Soft delete (set status to deleted)
       user.status = 'deleted';
       await user.save();
+
+      // Release their places in future events.
+      await Event.updateMany(
+        { 'registeredUsers.userId': user._id },
+        { $pull: { registeredUsers: { userId: user._id } } }
+      );
 
       logger.info(`User account deleted: ${user.email}`);
 

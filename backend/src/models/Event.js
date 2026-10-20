@@ -91,10 +91,7 @@ const EventSchema = new Schema(
     ],
 
     // Media
-    bannerImage: {
-      type: String,
-      required: [true, 'Event banner image is required'],
-    },
+    bannerImage: String,
     thumbnail: String,
     gallery: [String],
 
@@ -167,6 +164,7 @@ const EventSchema = new Schema(
       default: 'draft',
       index: true,
     },
+    cancellationReason: String,
     visibility: {
       type: String,
       enum: ['public', 'private', 'unlisted'],
@@ -277,11 +275,13 @@ EventSchema.index({ tags: 1 });
 
 // Virtual Properties
 EventSchema.virtual('isFull').get(function () {
-  return this.registrationCount >= this.capacity;
+  if (!this.capacity) return false;
+  return (this.registrationCount || 0) >= this.capacity;
 });
 
 EventSchema.virtual('spotsLeft').get(function () {
-  return Math.max(0, this.capacity - this.registrationCount);
+  if (!this.capacity) return null;
+  return Math.max(0, this.capacity - (this.registrationCount || 0));
 });
 
 EventSchema.virtual('attendanceRate').get(function () {
@@ -291,21 +291,23 @@ EventSchema.virtual('attendanceRate').get(function () {
 });
 
 EventSchema.virtual('isUpcoming').get(function () {
-  return this.startDateTime > new Date();
+  return this.startDateTime ? this.startDateTime > new Date() : false;
 });
 
 EventSchema.virtual('isOngoing').get(function () {
+  if (!this.startDateTime || !this.endDateTime) return false;
   const now = new Date();
   return this.startDateTime <= now && this.endDateTime >= now;
 });
 
 EventSchema.virtual('isPast').get(function () {
-  return this.endDateTime < new Date();
+  return this.endDateTime ? this.endDateTime < new Date() : false;
 });
 
 EventSchema.virtual('registrationOpen').get(function () {
+  if (!this.startDateTime) return false;
   const now = new Date();
-  const opensAt = this.registrationOpens || this.createdAt;
+  const opensAt = this.registrationOpens || this.createdAt || now;
   const closesAt = this.registrationCloses || this.startDateTime;
   return now >= opensAt && now <= closesAt && !this.isFull;
 });

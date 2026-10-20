@@ -228,10 +228,11 @@ NotificationSchema.virtual('shouldSendNow').get(function () {
 
 NotificationSchema.virtual('deliveryStatus').get(function () {
   const channels = [];
-  if (this.channels.inApp.sent) channels.push('in-app');
-  if (this.channels.email.sent) channels.push('email');
-  if (this.channels.sms.sent) channels.push('sms');
-  if (this.channels.push.sent) channels.push('push');
+  if (!this.channels) return channels;
+  if (this.channels.inApp?.sent) channels.push('in-app');
+  if (this.channels.email?.sent) channels.push('email');
+  if (this.channels.sms?.sent) channels.push('sms');
+  if (this.channels.push?.sent) channels.push('push');
   return channels;
 });
 
@@ -301,7 +302,7 @@ NotificationSchema.methods.retry = function () {
 
 // Static Methods
 NotificationSchema.statics.getUnreadCount = async function (userId) {
-  return this.countDocuments({ userId, read: false, status: 'sent' });
+  return this.countDocuments({ userId, read: false, status: { $ne: 'cancelled' } });
 };
 
 NotificationSchema.statics.markAllAsRead = async function (userId) {
@@ -314,8 +315,22 @@ NotificationSchema.statics.markAllAsRead = async function (userId) {
 NotificationSchema.statics.getPendingNotifications = async function () {
   return this.find({
     status: 'pending',
-    $or: [{ scheduledFor: { $lte: new Date() } }, { scheduledFor: { $exists: false } }],
-    $or: [{ expiresAt: { $gt: new Date() } }, { expiresAt: { $exists: false } }],
+    $and: [
+      {
+        $or: [
+          { scheduledFor: { $lte: new Date() } },
+          { scheduledFor: { $exists: false } },
+          { scheduledFor: null },
+        ],
+      },
+      {
+        $or: [
+          { expiresAt: { $gt: new Date() } },
+          { expiresAt: { $exists: false } },
+          { expiresAt: null },
+        ],
+      },
+    ],
   }).sort({ priority: -1, createdAt: 1 });
 };
 

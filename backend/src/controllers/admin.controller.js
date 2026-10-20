@@ -7,6 +7,25 @@ import { AppError } from '../middleware/errorHandler.js';
  * Handles admin management, user management, and system analytics
  */
 
+const escapeRegex = (value = '') =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const parsePagination = (page, limit, defaultLimit = 20) => {
+  const pageNumber = Math.max(1, parseInt(page, 10) || 1);
+  const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10) || defaultLimit));
+  return { pageNumber, pageSize };
+};
+
+const USER_SORT_FIELDS = [
+  '-createdAt',
+  'createdAt',
+  'fullname',
+  '-fullname',
+  'lastLogin',
+  '-lastLogin',
+  'status',
+];
+
 class AdminController {
   /**
    * Create Admin
@@ -14,7 +33,19 @@ class AdminController {
    */
   async createAdmin(req, res, next) {
     try {
-      const { email, password, firstName, lastName, role, permissions } = req.body;
+      const {
+        email,
+        password,
+        fullname,
+        firstName,
+        lastName,
+        role,
+        permissions,
+        department,
+      } = req.body;
+
+      const resolvedName =
+        (fullname || [firstName, lastName].filter(Boolean).join(' ')).trim();
 
       // Check if admin already exists
       const existingAdmin = await Admin.findOne({ email: email.toLowerCase() });
@@ -31,10 +62,11 @@ class AdminController {
       const admin = await Admin.create({
         email: email.toLowerCase(),
         password,
-        firstName,
-        lastName,
+        fullname: resolvedName,
         role: role || 'staff',
         permissions,
+        department,
+        createdBy: currentAdmin._id,
       });
 
       await currentAdmin.logAction('create', 'admin', admin._id, 'Created new admin', req.ip);
@@ -48,8 +80,7 @@ class AdminController {
           admin: {
             id: admin._id,
             email: admin.email,
-            firstName: admin.firstName,
-            lastName: admin.lastName,
+            fullname: admin.fullname,
             role: admin.role,
           },
         },
@@ -66,15 +97,16 @@ class AdminController {
   async getAllAdmins(req, res, next) {
     try {
       const { page = 1, limit = 20, role, status } = req.query;
+      const { pageNumber, pageSize } = parsePagination(page, limit);
 
       const query = {};
       if (role) query.role = role;
       if (status) query.status = status;
 
       const admins = await Admin.find(query)
-        .select('-password -twoFactorAuth.secret')
-        .limit(parseInt(limit))
-        .skip((parseInt(page) - 1) * parseInt(limit))
+        .select('-password -otpSecret -backupCodes')
+        .limit(pageSize)
+        .skip((pageNumber - 1) * pageSize)
         .sort('-createdAt');
 
       const total = await Admin.countDocuments(query);
@@ -84,8 +116,8 @@ class AdminController {
         data: {
           admins,
           total,
-          page: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
+          page: pageNumber,
+          totalPages: Math.ceil(total / pageSize) || 1,
         },
       });
     } catch (error) {
@@ -101,7 +133,7 @@ class AdminController {
     try {
       const { id } = req.params;
 
-      const admin = await Admin.findById(id).select('-password -twoFactorAuth.secret');
+      const admin = await Admin.findById(id).select('-password -otpSecret -backupCodes');
 
       if (!admin) {
         throw new AppError('Admin not found', 404);
@@ -123,24 +155,76 @@ class AdminController {
   async updateAdmin(req, res, next) {
     try {
       const { id } = req.params;
-      const { firstName, lastName, role, permissions, status } = req.body;
+      const {
+        fullname,
+        firstName,
+        lastName,
+        role,
+        permissions,
+        status,
+        department,
+        phone,
+        profileImage,
+      } = req.body;
 
       const admin = await Admin.findById(id);
       if (!admin) {
         throw new AppError('Admin not found', 404);
       }
 
-      // Only super_admin can update roles and permissions
-      const currentAdmin = await Admin.findById(req.user.id);
-      if (currentAdmin.role !== 'super_admin' && (role || permissions)) {
-        throw new AppError('Only super admins can update roles and permissions', 403);
+      const currentAdmin = req.user;
+      const isSelf = currentAdmin.id.toString() === id.toString();
+      const isSuperAdmin = currentAdmin.role === 'super_admin';
+
+      // Administrators may edit their own profile, but never their own role,
+      // permissions, or status. All changes to another administrator require
+      // a super administrator.
+      if (!isSelf && !isSuperAdmin) {
+        throw new AppError(
+          'Only super admins can update other administrator accounts',
+          403
+        );
       }
 
-      if (firstName) admin.firstName = firstName;
-      if (lastName) admin.lastName = lastName;
-      if (role) admin.role = role;
-      if (permissions) admin.permissions = permissions;
-      if (status) admin.status = status;
+      if (isSelf && (role !== undefined || permissions !== undefined || status !== undefined)) {
+        throw new AppError(
+          'You cannot change your own role, permissions, or status',
+          403
+        );
+      }
+
+      let invalidateSessions = false;
+
+      if (fullname) admin.fullname = fullname;
+      if (firstName || lastName) {
+        const parts = admin.fullname ? admin.fullname.split(/\s+/) : [];
+        admin.fullname = [
+          firstName || parts[0] || '',
+          lastName || parts.slice(1).join(' ') || '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .trim();
+      }
+      if (role !== undefined && role !== admin.role) {
+        admin.role = role;
+        invalidateSessions = true;
+      }
+      if (permissions !== undefined) {
+        admin.permissions = permissions;
+        invalidateSessions = true;
+      }
+      if (status !== undefined && status !== admin.status) {
+        admin.status = status;
+        invalidateSessions = true;
+      }
+      if (department !== undefined) admin.department = department;
+      if (phone !== undefined) admin.phone = phone;
+      if (profileImage !== undefined) admin.profileImage = profileImage;
+
+      if (invalidateSessions) {
+        admin.tokenVersion = (admin.tokenVersion || 0) + 1;
+      }
 
       await admin.save();
 
@@ -204,24 +288,26 @@ class AdminController {
   async getAllUsers(req, res, next) {
     try {
       const { page = 1, limit = 20, status, search, sort = '-createdAt' } = req.query;
+      const { pageNumber, pageSize } = parsePagination(page, limit);
+      const sortField = USER_SORT_FIELDS.includes(sort) ? sort : '-createdAt';
 
       const query = {};
       if (status) query.status = status;
 
       if (search) {
+        const safeSearch = escapeRegex(String(search).slice(0, 100));
         query.$or = [
-          { email: { $regex: search, $options: 'i' } },
-          { firstName: { $regex: search, $options: 'i' } },
-          { lastName: { $regex: search, $options: 'i' } },
-          { phone: { $regex: search, $options: 'i' } },
+          { email: { $regex: safeSearch, $options: 'i' } },
+          { fullname: { $regex: safeSearch, $options: 'i' } },
+          { phone: { $regex: safeSearch, $options: 'i' } },
         ];
       }
 
       const users = await User.find(query)
-        .select('-password')
-        .limit(parseInt(limit))
-        .skip((parseInt(page) - 1) * parseInt(limit))
-        .sort(sort);
+        .select('-password -twoFactorSecret -resetToken -resetTokenExpiration')
+        .limit(pageSize)
+        .skip((pageNumber - 1) * pageSize)
+        .sort(sortField);
 
       const total = await User.countDocuments(query);
 
@@ -230,8 +316,8 @@ class AdminController {
         data: {
           users,
           total,
-          page: parseInt(page),
-          totalPages: Math.ceil(total / parseInt(limit)),
+          page: pageNumber,
+          totalPages: Math.ceil(total / pageSize) || 1,
         },
       });
     } catch (error) {
@@ -249,7 +335,7 @@ class AdminController {
 
       const user = await User.findById(id)
         .select('-password')
-        .populate('registeredEvents.event', 'title date venue');
+        .populate('registeredEvents.eventId', 'title startDateTime endDateTime venue');
 
       if (!user) {
         throw new AppError('User not found', 404);
@@ -346,11 +432,14 @@ class AdminController {
         User.countDocuments(),
         User.countDocuments({ status: 'active' }),
         Event.countDocuments(),
-        Event.countDocuments({ date: { $gte: new Date() }, status: 'published' }),
-        Certificate.countDocuments({ status: 'issued' }),
+        Event.countDocuments({ startDateTime: { $gte: new Date() }, status: 'published' }),
+        Certificate.countDocuments({ status: 'active' }),
         Feedback.countDocuments(),
-        User.find().select('firstName lastName email createdAt').sort('-createdAt').limit(5),
-        Event.find().select('title date registeredCount attendedCount').sort('-createdAt').limit(5),
+        User.find().select('fullname email createdAt').sort('-createdAt').limit(5),
+        Event.find()
+          .select('title startDateTime registrationCount attendanceCount')
+          .sort('-createdAt')
+          .limit(5),
       ]);
 
       // Get registration trend (last 7 days)
@@ -433,8 +522,8 @@ class AdminController {
         {
           $group: {
             _id: null,
-            totalRegistrations: { $sum: '$registeredCount' },
-            totalAttendance: { $sum: '$attendedCount' },
+            totalRegistrations: { $sum: '$registrationCount' },
+            totalAttendance: { $sum: '$attendanceCount' },
           },
         },
       ]);
@@ -452,7 +541,7 @@ class AdminController {
         {
           $group: {
             _id: null,
-            avgRating: { $avg: '$rating.overall' },
+            avgRating: { $avg: '$ratings.overall' },
             count: { $sum: 1 },
           },
         },
@@ -470,7 +559,7 @@ class AdminController {
           attendanceRate: parseFloat(attendanceRate),
         },
         feedback: {
-          averageRating: averageFeedbackRating[0]?.avgRating.toFixed(2) || 0,
+          averageRating: (averageFeedbackRating[0]?.avgRating || 0).toFixed(2),
           totalFeedback: averageFeedbackRating[0]?.count || 0,
         },
       };
@@ -491,6 +580,7 @@ class AdminController {
   async getAuditLog(req, res, next) {
     try {
       const { page = 1, limit = 50, adminId, action, resource } = req.query;
+      const { pageNumber, pageSize } = parsePagination(page, limit, 50);
 
       const query = {};
       if (adminId) query._id = adminId;
@@ -499,7 +589,7 @@ class AdminController {
 
       let allActions = [];
       admins.forEach((admin) => {
-        const actions = admin.actionsLog.map((log) => ({
+        const actions = (admin.actionsLog || []).map((log) => ({
           ...log,
           adminEmail: admin.email,
           adminId: admin._id,
@@ -519,8 +609,8 @@ class AdminController {
       allActions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
       // Pagination
-      const startIndex = (parseInt(page) - 1) * parseInt(limit);
-      const endIndex = startIndex + parseInt(limit);
+      const startIndex = (pageNumber - 1) * pageSize;
+      const endIndex = startIndex + pageSize;
       const paginatedActions = allActions.slice(startIndex, endIndex);
 
       res.json({
@@ -528,8 +618,8 @@ class AdminController {
         data: {
           logs: paginatedActions,
           total: allActions.length,
-          page: parseInt(page),
-          totalPages: Math.ceil(allActions.length / parseInt(limit)),
+          page: pageNumber,
+          totalPages: Math.ceil(allActions.length / pageSize) || 1,
         },
       });
     } catch (error) {
@@ -551,7 +641,9 @@ class AdminController {
 
       switch (type) {
         case 'users':
-          data = await User.find().select('-password').lean();
+          data = await User.find()
+            .select('-password -twoFactorSecret -resetToken -resetTokenExpiration')
+            .lean();
           filename = 'users-export';
           break;
         case 'events':
@@ -559,11 +651,14 @@ class AdminController {
           filename = 'events-export';
           break;
         case 'certificates':
-          data = await Certificate.find().populate('user event').lean();
+          data = await Certificate.find()
+            .select('-fileUrl')
+            .populate('userId eventId')
+            .lean();
           filename = 'certificates-export';
           break;
         case 'feedback':
-          data = await Feedback.find().populate('user event').lean();
+          data = await Feedback.find().populate('userId eventId').lean();
           filename = 'feedback-export';
           break;
         default:

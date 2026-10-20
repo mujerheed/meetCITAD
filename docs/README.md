@@ -49,6 +49,10 @@ docs/
 - [Production Setup](./deployment/production.md)
 - [Monitoring](./deployment/monitoring.md)
 
+### Governance and Quality
+- [Security Architecture and Controls](./SECURITY.md)
+- [Non-Functional Requirements](./NON_FUNCTIONAL_REQUIREMENTS.md)
+
 ## 🎯 Project Overview
 
 **meetCITAD** is a comprehensive event attendance and engagement system built for CITAD (Centre for Information Technology and Development) in Kano, Nigeria.

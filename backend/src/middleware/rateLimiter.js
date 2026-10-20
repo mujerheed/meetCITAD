@@ -1,6 +1,6 @@
 import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
-import { redisClient } from '../config/redis.js';
+import { getRedisClient } from '../config/redis.js';
 import config from '../config/index.js';
 import { AppError } from './errorHandler.js';
 import logger from '../utils/logger.js';
@@ -8,6 +8,8 @@ import logger from '../utils/logger.js';
 /**
  * Create rate limiter with Redis store
  */
+let warnedAboutInMemoryLimits = false;
+
 const createRateLimiter = (options) => {
   const {
     windowMs = 15 * 60 * 1000, // 15 minutes
@@ -19,15 +21,22 @@ const createRateLimiter = (options) => {
   } = options;
 
   // Use Redis store if available, otherwise in-memory
-  const store = redisClient.isReady
-    ? new RedisStore({
-        // @ts-expect-error - Known issue with RedisStore types
-        client: redisClient,
+  let store;
+  try {
+    const redisClient = getRedisClient();
+    if (redisClient.isReady) {
+      store = new RedisStore({
+        sendCommand: (...args) => redisClient.sendCommand(args),
         prefix: 'rl:',
-      })
-    : undefined;
+      });
+    }
+  } catch (error) {
+    // Redis not initialized, use in-memory store
+    store = undefined;
+  }
 
-  if (!store) {
+  if (!store && !warnedAboutInMemoryLimits) {
+    warnedAboutInMemoryLimits = true;
     logger.warn('Redis not available, using in-memory rate limiting');
   }
 
@@ -59,31 +68,40 @@ const createRateLimiter = (options) => {
  * 100 requests per 15 minutes
  */
 export const apiLimiter = createRateLimiter({
-  windowMs: config.security.rateLimiting.windowMs,
-  max: config.security.rateLimiting.max,
+  windowMs: config.rateLimit.windowMs,
+  max: config.rateLimit.maxRequests,
   message: 'Too many requests from this IP, please try again later.',
 });
 
 /**
  * Authentication Rate Limiter
- * 5 requests per 15 minutes
+ * Failed logins only; successful authentication does not consume the budget.
  */
 export const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: config.rateLimit.authMax,
   message: 'Too many login attempts, please try again after 15 minutes.',
   skipSuccessfulRequests: true, // Don't count successful logins
 });
 
 /**
- * Strict Authentication Rate Limiter (for OTP, password reset)
- * 3 requests per 15 minutes
+ * Strict Authentication Rate Limiter (OTP, password reset, password change)
+ * Every request counts, including successful ones, to prevent email/OTP spam.
  */
 export const strictAuthLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 3,
   message: 'Too many attempts, please try again after 15 minutes.',
-  skipSuccessfulRequests: true,
+});
+
+/**
+ * Refresh Token Rate Limiter
+ * Refresh is cheap but should not be unbounded; keyed per IP.
+ */
+export const refreshLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: 'Too many token refresh attempts, please sign in again.',
 });
 
 /**
@@ -102,7 +120,7 @@ export const registrationLimiter = createRateLimiter({
  */
 export const scanLimiter = createRateLimiter({
   windowMs: 60 * 1000, // 1 minute
-  max: 100,
+  max: config.rateLimit.scanMax,
   message: 'Too many scan attempts, please wait a moment.',
 });
 
@@ -158,6 +176,16 @@ export const adminLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 200,
   message: 'Too many admin actions, please slow down.',
+});
+
+/**
+ * Export Rate Limiter
+ * Exports are expensive and contain bulk personal data.
+ */
+export const exportLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Too many export requests, please try again later.',
 });
 
 /**
@@ -222,6 +250,7 @@ export const ipLimiter = createRateLimiter({
  */
 export const resetRateLimit = async (identifier) => {
   try {
+    const redisClient = getRedisClient();
     if (!redisClient.isReady) {
       logger.warn('Redis not available, cannot reset rate limit');
       return false;
@@ -247,6 +276,7 @@ export default {
   apiLimiter,
   authLimiter,
   strictAuthLimiter,
+  refreshLimiter,
   registrationLimiter,
   scanLimiter,
   downloadLimiter,
@@ -254,6 +284,7 @@ export default {
   feedbackLimiter,
   uploadLimiter,
   adminLimiter,
+  exportLimiter,
   createCustomLimiter,
   skipRateLimitIf,
   skipForAdmins,

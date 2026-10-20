@@ -1,12 +1,61 @@
-import { Notification, User } from '../models/index.js';
+import { Notification, User, Event } from '../models/index.js';
 import { notificationService } from '../services/index.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
  * Notification Controller
- * Handles user notifications and broadcasts
+ * Handles user notifications and broadcasts.
+ * Notification.userId and the flat User.preferences fields are canonical.
  */
+
+const toId = (value) => (value?._id ? value._id.toString() : value?.toString());
+
+/**
+ * Accept either an array of channel names or a channel object and return the
+ * schema-compatible `{ inApp, email, sms, push }` object.
+ */
+const buildChannels = (channels) => {
+  const result = {
+    inApp: { enabled: true },
+    email: { enabled: false },
+    sms: { enabled: false },
+    push: { enabled: false },
+  };
+
+  if (!channels) return result;
+
+  if (Array.isArray(channels)) {
+    channels.forEach((channel) => {
+      const name = String(channel).toLowerCase();
+      if (name === 'in-app' || name === 'inapp' || name === 'in_app') {
+        result.inApp.enabled = true;
+      } else if (result[name]) {
+        result[name].enabled = true;
+      }
+    });
+    return result;
+  }
+
+  if (typeof channels === 'object') {
+    ['inApp', 'email', 'sms', 'push'].forEach((channel) => {
+      if (channels[channel] !== undefined) {
+        result[channel].enabled =
+          typeof channels[channel] === 'boolean'
+            ? channels[channel]
+            : channels[channel]?.enabled !== false;
+      }
+    });
+  }
+
+  return result;
+};
+
+const summarizeResults = (results = []) => ({
+  totalSent: results.filter((result) => result.success).length,
+  totalFailed: results.filter((result) => !result.success).length,
+  details: results,
+});
 
 class NotificationController {
   /**
@@ -16,11 +65,10 @@ class NotificationController {
   async getUserNotifications(req, res, next) {
     try {
       const { page = 1, limit = 20, unreadOnly, type } = req.query;
-      const userId = req.user.id;
 
-      const result = await notificationService.getUserNotifications(userId, {
-        page: parseInt(page),
-        limit: parseInt(limit),
+      const result = await notificationService.getUserNotifications(req.user.id, {
+        page: parseInt(page, 10) || 1,
+        limit: Math.min(parseInt(limit, 10) || 20, 100),
         unreadOnly: unreadOnly === 'true',
         type,
       });
@@ -40,15 +88,16 @@ class NotificationController {
    */
   async getNotification(req, res, next) {
     try {
-      const { id } = req.params;
+      const notification = await Notification.findById(req.params.id);
 
-      const notification = await Notification.findById(id);
       if (!notification) {
         throw new AppError('Notification not found', 404);
       }
 
-      // Check permission
-      if (notification.user.toString() !== req.user.id && req.user.role !== 'admin') {
+      if (
+        req.userRole !== 'admin' &&
+        toId(notification.userId) !== req.user.id.toString()
+      ) {
         throw new AppError('Not authorized to view this notification', 403);
       }
 
@@ -63,13 +112,14 @@ class NotificationController {
 
   /**
    * Mark Notification as Read
-   * PUT /api/v1/notifications/:id/read
+   * POST /api/v1/notifications/:id/mark-read
    */
   async markAsRead(req, res, next) {
     try {
-      const { id } = req.params;
-
-      const notification = await notificationService.markAsRead(id, req.user.id);
+      const notification = await notificationService.markAsRead(
+        req.params.id,
+        req.user.id
+      );
 
       res.json({
         success: true,
@@ -83,15 +133,12 @@ class NotificationController {
 
   /**
    * Mark All Notifications as Read
-   * PUT /api/v1/notifications/read-all
+   * POST /api/v1/notifications/mark-all
    */
   async markAllAsRead(req, res, next) {
     try {
-      const userId = req.user.id;
-
-      const count = await notificationService.markAllAsRead(userId);
-
-      logger.info(`All notifications marked as read for user: ${userId}`);
+      const result = await notificationService.markAllAsRead(req.user.id);
+      const count = result.modifiedCount ?? result.nModified ?? 0;
 
       res.json({
         success: true,
@@ -109,21 +156,17 @@ class NotificationController {
    */
   async deleteNotification(req, res, next) {
     try {
-      const { id } = req.params;
+      const notification = await Notification.findById(req.params.id);
 
-      const notification = await Notification.findById(id);
       if (!notification) {
         throw new AppError('Notification not found', 404);
       }
 
-      // Check permission
-      if (notification.user.toString() !== req.user.id) {
+      if (toId(notification.userId) !== req.user.id.toString()) {
         throw new AppError('Not authorized to delete this notification', 403);
       }
 
       await notification.deleteOne();
-
-      logger.info(`Notification deleted: ${id} by user ${req.user.id}`);
 
       res.json({
         success: true,
@@ -140,11 +183,7 @@ class NotificationController {
    */
   async deleteAllNotifications(req, res, next) {
     try {
-      const userId = req.user.id;
-
-      const result = await Notification.deleteMany({ user: userId });
-
-      logger.info(`All notifications deleted for user: ${userId}`);
+      const result = await Notification.deleteMany({ userId: req.user.id });
 
       res.json({
         success: true,
@@ -162,11 +201,10 @@ class NotificationController {
    */
   async getUnreadCount(req, res, next) {
     try {
-      const userId = req.user.id;
-
       const count = await Notification.countDocuments({
-        user: userId,
+        userId: req.user.id,
         read: false,
+        status: { $ne: 'cancelled' },
       });
 
       res.json({
@@ -184,39 +222,41 @@ class NotificationController {
    */
   async sendBroadcast(req, res, next) {
     try {
-      const { title, message, type = 'announcement', userIds, channels } = req.body;
-
-      let targetUsers = [];
-
-      if (userIds && userIds.length > 0) {
-        // Send to specific users
-        targetUsers = userIds;
-      } else {
-        // Send to all active users
-        const users = await User.find({ status: 'active' }).select('_id');
-        targetUsers = users.map((u) => u._id.toString());
-      }
-
-      const notifications = targetUsers.map((userId) => ({
-        user: userId,
-        type,
+      const {
         title,
         message,
-        channels: channels || ['in-app'],
-      }));
+        type = 'announcement',
+        userIds,
+        channels,
+      } = req.body;
 
-      const result = await notificationService.sendBulkNotifications(notifications);
+      const query = { status: 'active' };
+      if (Array.isArray(userIds) && userIds.length > 0) {
+        query._id = { $in: userIds };
+      }
 
-      logger.info(`Broadcast notification sent by admin ${req.user.id} to ${targetUsers.length} users`);
+      const users = await User.find(query);
+
+      if (users.length === 0) {
+        throw new AppError('No matching users found', 400);
+      }
+
+      const results = await notificationService.sendBulkNotifications(users, {
+        title,
+        message,
+        type,
+        channels: buildChannels(channels),
+        sentBy: req.user.id,
+      });
+
+      logger.info(
+        `Broadcast notification sent by admin ${req.user.id} to ${users.length} users`
+      );
 
       res.json({
         success: true,
         message: 'Broadcast notification sent successfully',
-        data: {
-          totalSent: result.success.length,
-          totalFailed: result.failed.length,
-          details: result,
-        },
+        data: summarizeResults(results),
       });
     } catch (error) {
       next(error);
@@ -232,36 +272,34 @@ class NotificationController {
       const { eventId } = req.params;
       const { title, message, type = 'event_update', channels } = req.body;
 
-      // Get all users registered for the event
-      const users = await User.find({
-        'registeredEvents.event': eventId,
-      }).select('_id');
+      const event = await Event.findById(eventId);
+      if (!event) {
+        throw new AppError('Event not found', 404);
+      }
 
-      if (users.length === 0) {
+      const userIds = event.registeredUsers
+        .filter((registration) => registration.status === 'confirmed')
+        .map((registration) => toId(registration.userId));
+
+      if (userIds.length === 0) {
         throw new AppError('No users registered for this event', 400);
       }
 
-      const notifications = users.map((user) => ({
-        user: user._id,
-        type,
+      const users = await User.find({ _id: { $in: userIds } });
+
+      const results = await notificationService.sendBulkNotifications(users, {
         title,
         message,
-        relatedEvent: eventId,
-        channels: channels || ['in-app', 'email'],
-      }));
-
-      const result = await notificationService.sendBulkNotifications(notifications);
-
-      logger.info(`Event notification sent by admin ${req.user.id} for event ${eventId} to ${users.length} users`);
+        type,
+        relatedEvent: event._id,
+        channels: buildChannels(channels || ['in-app', 'email']),
+        sentBy: req.user.id,
+      });
 
       res.json({
         success: true,
         message: 'Event notification sent successfully',
-        data: {
-          totalSent: result.success.length,
-          totalFailed: result.failed.length,
-          details: result,
-        },
+        data: summarizeResults(results),
       });
     } catch (error) {
       next(error);
@@ -275,44 +313,48 @@ class NotificationController {
   async sendEventReminder(req, res, next) {
     try {
       const { eventId } = req.params;
-      const { channels } = req.body;
 
-      // Get all registered users who haven't attended
-      const users = await User.find({
-        'registeredEvents.event': eventId,
-        'registeredEvents.attended': false,
-      }).select('_id');
+      const event = await Event.findById(eventId);
+      if (!event) {
+        throw new AppError('Event not found', 404);
+      }
 
-      if (users.length === 0) {
+      const attendedIds = new Set(
+        event.attendedUsers.map((attendance) => toId(attendance.userId))
+      );
+
+      const userIds = event.registeredUsers
+        .filter(
+          (registration) =>
+            registration.status === 'confirmed' &&
+            !attendedIds.has(toId(registration.userId))
+        )
+        .map((registration) => toId(registration.userId));
+
+      if (userIds.length === 0) {
         return res.json({
           success: true,
           message: 'No users to send reminders to',
-          data: { totalSent: 0 },
+          data: { totalSent: 0, totalFailed: 0, details: [] },
         });
       }
 
-      const reminders = [];
+      const users = await User.find({ _id: { $in: userIds } });
+      const results = [];
+
       for (const user of users) {
         try {
-          await notificationService.sendEventReminder(user._id.toString(), eventId, channels);
-          reminders.push({ userId: user._id, success: true });
+          await notificationService.sendEventReminder(user, event);
+          results.push({ userId: user._id, success: true });
         } catch (error) {
-          reminders.push({ userId: user._id, success: false, error: error.message });
+          results.push({ userId: user._id, success: false, error: error.message });
         }
       }
-
-      const successCount = reminders.filter((r) => r.success).length;
-
-      logger.info(`Event reminder sent by admin ${req.user.id} for event ${eventId} to ${successCount} users`);
 
       res.json({
         success: true,
         message: 'Event reminders sent successfully',
-        data: {
-          totalSent: successCount,
-          totalFailed: reminders.length - successCount,
-          details: reminders,
-        },
+        data: summarizeResults(results),
       });
     } catch (error) {
       next(error);
@@ -334,43 +376,41 @@ class NotificationController {
         if (endDate) query.createdAt.$lte = new Date(endDate);
       }
 
-      const [total, read, unread, byType, byChannel] = await Promise.all([
-        Notification.countDocuments(query),
-        Notification.countDocuments({ ...query, read: true }),
-        Notification.countDocuments({ ...query, read: false }),
-        Notification.aggregate([
-          { $match: query },
-          { $group: { _id: '$type', count: { $sum: 1 } } },
-        ]),
-        Notification.aggregate([
-          { $match: query },
-          { $unwind: '$channels' },
-          { $group: { _id: '$channels', count: { $sum: 1 } } },
-        ]),
-      ]);
+      const [total, read, unread, byType, emailSent, smsSent, inAppSent] =
+        await Promise.all([
+          Notification.countDocuments(query),
+          Notification.countDocuments({ ...query, read: true }),
+          Notification.countDocuments({ ...query, read: false }),
+          Notification.aggregate([
+            { $match: query },
+            { $group: { _id: '$type', count: { $sum: 1 } } },
+          ]),
+          Notification.countDocuments({ ...query, 'channels.email.sent': true }),
+          Notification.countDocuments({ ...query, 'channels.sms.sent': true }),
+          Notification.countDocuments({ ...query, 'channels.inApp.sent': true }),
+        ]);
 
       const typeDistribution = {};
       byType.forEach((item) => {
         typeDistribution[item._id] = item.count;
       });
 
-      const channelDistribution = {};
-      byChannel.forEach((item) => {
-        channelDistribution[item._id] = item.count;
-      });
-
-      const stats = {
-        total,
-        read,
-        unread,
-        readRate: total > 0 ? ((read / total) * 100).toFixed(2) : 0,
-        typeDistribution,
-        channelDistribution,
-      };
-
       res.json({
         success: true,
-        data: { statistics: stats },
+        data: {
+          statistics: {
+            total,
+            read,
+            unread,
+            readRate: total > 0 ? ((read / total) * 100).toFixed(2) : 0,
+            typeDistribution,
+            channelDistribution: {
+              inApp: inAppSent,
+              email: emailSent,
+              sms: smsSent,
+            },
+          },
+        },
       });
     } catch (error) {
       next(error);
@@ -383,23 +423,29 @@ class NotificationController {
    */
   async testNotification(req, res, next) {
     try {
-      const { userId, type, channels, title, message } = req.body;
+      const { userId, type = 'system', channels, title, message } = req.body;
 
       const targetUserId = userId || req.user.id;
+      const user = await User.findById(targetUserId);
 
-      await notificationService.sendNotification({
-        user: targetUserId,
-        type: type || 'system',
+      if (!user) {
+        throw new AppError('Target user not found', 404);
+      }
+
+      const notification = await notificationService.createNotification({
+        userId: user._id,
+        type,
         title: title || 'Test Notification',
         message: message || 'This is a test notification from the system.',
-        channels: channels || ['in-app'],
+        channels: buildChannels(channels || ['in-app']),
       });
 
-      logger.info(`Test notification sent by admin ${req.user.id} to user ${targetUserId}`);
+      await notificationService.sendNotification(notification, user);
 
       res.json({
         success: true,
         message: 'Test notification sent successfully',
+        data: { notification },
       });
     } catch (error) {
       next(error);
@@ -413,8 +459,6 @@ class NotificationController {
   async cleanupExpired(req, res, next) {
     try {
       const count = await notificationService.cleanupExpiredNotifications();
-
-      logger.info(`Expired notifications cleaned up: ${count} by admin ${req.user.id}`);
 
       res.json({
         success: true,
@@ -432,12 +476,22 @@ class NotificationController {
    */
   async getPreferences(req, res, next) {
     try {
-      const user = await User.findById(req.user.id).select('preferences.notifications');
+      const user = await User.findById(req.user.id);
+
+      if (!user) {
+        throw new AppError('User not found', 404);
+      }
 
       res.json({
         success: true,
         data: {
-          preferences: user.preferences.notifications,
+          preferences: {
+            emailNotifications: user.preferences.emailNotifications,
+            smsNotifications: user.preferences.smsNotifications,
+            pushNotifications: user.preferences.pushNotifications,
+            marketingEmails: user.preferences.marketingEmails,
+            eventReminders: user.preferences.eventReminders,
+          },
         },
       });
     } catch (error) {
@@ -451,23 +505,35 @@ class NotificationController {
    */
   async updatePreferences(req, res, next) {
     try {
-      const { email, sms, push } = req.body;
+      const body = req.body || {};
+      const email = body.email ?? body.emailNotifications;
+      const sms = body.sms ?? body.smsNotifications;
+      const push = body.push ?? body.pushNotifications;
 
       const user = await User.findById(req.user.id);
+      if (!user) {
+        throw new AppError('User not found', 404);
+      }
 
-      if (email !== undefined) user.preferences.notifications.email = email;
-      if (sms !== undefined) user.preferences.notifications.sms = sms;
-      if (push !== undefined) user.preferences.notifications.push = push;
+      if (email !== undefined) user.preferences.emailNotifications = email;
+      if (sms !== undefined) user.preferences.smsNotifications = sms;
+      if (push !== undefined) user.preferences.pushNotifications = push;
+      if (body.marketingEmails !== undefined) {
+        user.preferences.marketingEmails = body.marketingEmails;
+      }
 
       await user.save();
-
-      logger.info(`Notification preferences updated for user: ${user.email}`);
 
       res.json({
         success: true,
         message: 'Notification preferences updated successfully',
         data: {
-          preferences: user.preferences.notifications,
+          preferences: {
+            emailNotifications: user.preferences.emailNotifications,
+            smsNotifications: user.preferences.smsNotifications,
+            pushNotifications: user.preferences.pushNotifications,
+            marketingEmails: user.preferences.marketingEmails,
+          },
         },
       });
     } catch (error) {

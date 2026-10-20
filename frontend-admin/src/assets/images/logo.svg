@@ -1,0 +1,30 @@
+<svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Connection lines (blue) - drawn first so nodes appear on top -->
+  <line x1="20" y1="20" x2="20" y2="4" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="32" y2="10" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="36" y2="20" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="32" y2="30" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="20" y2="36" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="8" y2="30" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="4" y2="20" stroke="#0F2A44" stroke-width="1.5"/>
+  <line x1="20" y1="20" x2="8" y2="10" stroke="#0F2A44" stroke-width="1.5"/>
+  
+  <!-- Outer circle nodes (deep institutional blue - dominant) -->
+  <circle cx="20" cy="4" r="2.5" fill="#0F2A44"/>
+  <circle cx="32" cy="10" r="2.5" fill="#0F2A44"/>
+  <circle cx="36" cy="20" r="2.5" fill="#0F2A44"/>
+  <circle cx="32" cy="30" r="2.5" fill="#0F2A44"/>
+  <circle cx="20" cy="36" r="2.5" fill="#0F2A44"/>
+  <circle cx="8" cy="30" r="2.5" fill="#0F2A44"/>
+  <circle cx="4" cy="20" r="2.5" fill="#0F2A44"/>
+  <circle cx="8" cy="10" r="2.5" fill="#0F2A44"/>
+  
+  <!-- Center node (blue) -->
+  <circle cx="20" cy="20" r="3" fill="#0F2A44"/>
+  
+  <!-- Restrained gold accent nodes (sparingly used) -->
+  <circle cx="20" cy="12" r="2" fill="#C9A44C"/>
+  <circle cx="28" cy="20" r="2" fill="#C9A44C"/>
+  <circle cx="20" cy="28" r="2" fill="#C9A44C"/>
+  <circle cx="12" cy="20" r="2" fill="#C9A44C"/>
+</svg>

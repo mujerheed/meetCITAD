@@ -1,12 +1,52 @@
+import fs from 'fs/promises';
+import path from 'path';
 import { Certificate, CertificateTemplate, Event, User } from '../models/index.js';
-import { certificateService, storageService } from '../services/index.js';
+import { certificateService } from '../services/index.js';
+import config from '../config/index.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
 
 /**
  * Certificate Controller
- * Handles certificate generation, templates, and verification
+ * Handles certificate generation, templates, and verification.
  */
+
+const toId = (value) => (value?._id ? value._id.toString() : value?.toString());
+
+const escapeRegex = (value = '') =>
+  String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const CERTIFICATE_SORT_FIELDS = [
+  '-issuedDate',
+  'issuedDate',
+  'certificateNumber',
+  '-certificateNumber',
+  'recipientName',
+  '-recipientName',
+  'status',
+];
+
+const userAttendedEvent = (event, userId) =>
+  (event.attendedUsers || []).some(
+    (attendance) => toId(attendance.userId) === userId.toString()
+  );
+
+const canReadCertificates = (req) =>
+  req.userRole !== 'admin' || req.user.hasPermission('generate_certificates');
+
+const markCertificateIssued = async (user, event) => {
+  const registration = (user.registeredEvents || []).find(
+    (item) => toId(item.eventId) === event._id.toString()
+  );
+
+  if (registration) {
+    registration.certificateIssued = true;
+    user.stats.totalCertificates = user.registeredEvents.filter(
+      (item) => item.certificateIssued
+    ).length;
+    await user.save();
+  }
+};
 
 class CertificateController {
   /**
@@ -15,28 +55,24 @@ class CertificateController {
    */
   async createTemplate(req, res, next) {
     try {
-      const {
-        name,
-        description,
-        content,
-        layout,
-        styles,
-        placeholders,
-        isDefault,
-      } = req.body;
+      const body = { ...req.body };
+
+      if (body.backgroundImage) {
+        body.design = {
+          ...(body.design || {}),
+          backgroundImage: body.backgroundImage,
+        };
+        delete body.backgroundImage;
+      }
 
       const template = await CertificateTemplate.create({
-        name,
-        description,
-        content,
-        layout,
-        styles,
-        placeholders,
-        isDefault,
+        ...body,
         createdBy: req.user.id,
       });
 
-      logger.info(`Certificate template created: ${template.name} by admin ${req.user.id}`);
+      logger.info(
+        `Certificate template created: ${template.name} by admin ${req.user.id}`
+      );
 
       res.status(201).json({
         success: true,
@@ -57,12 +93,10 @@ class CertificateController {
       const { active } = req.query;
 
       const query = {};
-      if (active === 'true') {
-        query.isActive = true;
-      }
+      if (active === 'true') query.isActive = true;
 
       const templates = await CertificateTemplate.find(query)
-        .populate('createdBy', 'firstName lastName email')
+        .populate('createdBy', 'fullname email')
         .sort('-createdAt');
 
       res.json({
@@ -83,10 +117,10 @@ class CertificateController {
    */
   async getTemplate(req, res, next) {
     try {
-      const { id } = req.params;
-
-      const template = await CertificateTemplate.findById(id)
-        .populate('createdBy', 'firstName lastName email');
+      const template = await CertificateTemplate.findById(req.params.id).populate(
+        'createdBy',
+        'fullname email'
+      );
 
       if (!template) {
         throw new AppError('Template not found', 404);
@@ -107,17 +141,18 @@ class CertificateController {
    */
   async updateTemplate(req, res, next) {
     try {
-      const { id } = req.params;
-
-      const template = await CertificateTemplate.findById(id);
+      const template = await CertificateTemplate.findById(req.params.id);
       if (!template) {
         throw new AppError('Template not found', 404);
       }
 
       Object.assign(template, req.body);
+      template.lastModifiedBy = req.user.id;
       await template.save();
 
-      logger.info(`Certificate template updated: ${template.name} by admin ${req.user.id}`);
+      logger.info(
+        `Certificate template updated: ${template.name} by admin ${req.user.id}`
+      );
 
       res.json({
         success: true,
@@ -135,25 +170,24 @@ class CertificateController {
    */
   async deleteTemplate(req, res, next) {
     try {
-      const { id } = req.params;
-
-      const template = await CertificateTemplate.findById(id);
+      const template = await CertificateTemplate.findById(req.params.id);
       if (!template) {
         throw new AppError('Template not found', 404);
       }
 
-      // Check if template is in use
-      const certificatesUsingTemplate = await Certificate.countDocuments({
-        template: id,
-      });
-
-      if (certificatesUsingTemplate > 0) {
-        throw new AppError('Cannot delete template that is in use', 400);
+      const inUse = await Certificate.countDocuments({ templateId: template._id });
+      if (inUse > 0) {
+        throw new AppError(
+          'Cannot delete a template that is already in use by certificates',
+          400
+        );
       }
 
       await template.deleteOne();
 
-      logger.info(`Certificate template deleted: ${template.name} by admin ${req.user.id}`);
+      logger.info(
+        `Certificate template deleted: ${template.name} by admin ${req.user.id}`
+      );
 
       res.json({
         success: true,
@@ -172,10 +206,9 @@ class CertificateController {
     try {
       const { userId, eventId, templateId } = req.body;
 
-      const [user, event, template] = await Promise.all([
+      const [user, event] = await Promise.all([
         User.findById(userId),
         Event.findById(eventId),
-        templateId ? CertificateTemplate.findById(templateId) : CertificateTemplate.findOne({ isDefault: true }),
       ]);
 
       if (!user) {
@@ -186,47 +219,38 @@ class CertificateController {
         throw new AppError('Event not found', 404);
       }
 
-      if (!template) {
-        throw new AppError('Certificate template not found', 404);
-      }
-
-      // Check if user attended the event
-      const registration = user.registeredEvents.find(
-        (reg) => reg.event.toString() === eventId && reg.attended
-      );
-
-      if (!registration) {
+      if (!userAttendedEvent(event, userId)) {
         throw new AppError('User did not attend this event', 400);
       }
 
-      // Check if certificate already exists
       const existingCertificate = await Certificate.findOne({
-        user: userId,
-        event: eventId,
+        userId,
+        eventId,
         status: { $ne: 'revoked' },
       });
 
       if (existingCertificate) {
-        throw new AppError('Certificate already exists for this user and event', 400);
+        throw new AppError(
+          'Certificate already exists for this user and event',
+          400
+        );
       }
 
-      // Generate certificate
-      const certificate = await certificateService.generateCertificate({
-        userId,
-        eventId,
-        templateId: template._id,
-      });
+      const template = templateId
+        ? await CertificateTemplate.findById(templateId)
+        : null;
 
-      // Update user registration
-      const regIndex = user.registeredEvents.findIndex(
-        (reg) => reg.event.toString() === eventId
+      const certificate = await certificateService.generateCertificate(
+        user,
+        event,
+        template
       );
-      if (regIndex !== -1) {
-        user.registeredEvents[regIndex].certificateIssued = true;
-        await user.save();
-      }
 
-      logger.info(`Certificate generated for user ${user.email} for event ${event.title}`);
+      await markCertificateIssued(user, event);
+
+      logger.info(
+        `Certificate generated for user ${user.email} for event ${event.title}`
+      );
 
       res.status(201).json({
         success: true,
@@ -244,21 +268,14 @@ class CertificateController {
    */
   async bulkGenerateCertificates(req, res, next) {
     try {
-      const { eventId, templateId } = req.body;
+      const { eventId } = req.body;
 
       const event = await Event.findById(eventId);
       if (!event) {
         throw new AppError('Event not found', 404);
       }
 
-      // Generate certificates for all attendees
-      const result = await certificateService.generateBulkCertificates(eventId, templateId);
-
-      // Update event
-      event.certificatesIssued = result.success.length;
-      await event.save();
-
-      logger.info(`Bulk certificates generated for event ${event.title}: ${result.success.length} certificates`);
+      const result = await certificateService.generateBulkCertificates(eventId);
 
       res.json({
         success: true,
@@ -276,19 +293,23 @@ class CertificateController {
    */
   async getCertificate(req, res, next) {
     try {
-      const { id } = req.params;
-
-      const certificate = await Certificate.findById(id)
-        .populate('user', 'firstName lastName email')
-        .populate('event', 'title date venue')
-        .populate('template', 'name');
+      const certificate = await Certificate.findById(req.params.id)
+        .populate('userId', 'fullname email')
+        .populate('eventId', 'title startDateTime venue')
+        .populate('templateId', 'name type');
 
       if (!certificate) {
         throw new AppError('Certificate not found', 404);
       }
 
-      // Check permission (user can only view their own certificate unless admin)
-      if (req.user.role !== 'admin' && certificate.user._id.toString() !== req.user.id) {
+      if (!canReadCertificates(req)) {
+        throw new AppError('Not authorized to view certificates', 403);
+      }
+
+      if (
+        req.userRole !== 'admin' &&
+        toId(certificate.userId) !== req.user.id.toString()
+      ) {
         throw new AppError('Not authorized to view this certificate', 403);
       }
 
@@ -309,9 +330,12 @@ class CertificateController {
     try {
       const { userId } = req.params;
 
-      // Check permission
-      if (req.user.role !== 'admin' && userId !== req.user.id) {
+      if (req.userRole !== 'admin' && userId !== req.user.id.toString()) {
         throw new AppError('Not authorized to view these certificates', 403);
+      }
+
+      if (!canReadCertificates(req)) {
+        throw new AppError('Not authorized to view certificates', 403);
       }
 
       const certificates = await certificateService.getUserCertificates(userId);
@@ -334,30 +358,45 @@ class CertificateController {
    */
   async downloadCertificate(req, res, next) {
     try {
-      const { id } = req.params;
-
-      const certificate = await Certificate.findById(id)
-        .populate('user', 'firstName lastName')
-        .populate('event', 'title');
+      const certificate = await Certificate.findById(req.params.id);
 
       if (!certificate) {
         throw new AppError('Certificate not found', 404);
       }
 
-      // Check permission
-      if (req.user.role !== 'admin' && certificate.user._id.toString() !== req.user.id) {
+      if (!canReadCertificates(req)) {
+        throw new AppError('Not authorized to view certificates', 403);
+      }
+
+      if (
+        req.userRole !== 'admin' &&
+        toId(certificate.userId) !== req.user.id.toString()
+      ) {
         throw new AppError('Not authorized to download this certificate', 403);
       }
 
-      if (certificate.status === 'revoked') {
-        throw new AppError('This certificate has been revoked', 400);
+      if (certificate.status !== 'active') {
+        throw new AppError(
+          certificate.status === 'revoked'
+            ? 'This certificate has been revoked'
+            : 'This certificate is no longer active',
+          400
+        );
       }
 
-      // Track download
-      await certificateService.downloadCertificate(id);
+      await certificate.incrementDownloadCount();
 
-      // Get file
-      const fileBuffer = await storageService.getFile(certificate.filePath);
+      const fileName = path.basename(
+        certificate.fileName || certificate.fileUrl || ''
+      );
+      const filePath = path.join(config.storage.certificateDir, fileName);
+
+      let fileBuffer;
+      try {
+        fileBuffer = await fs.readFile(filePath);
+      } catch {
+        throw new AppError('Certificate file is not available', 404);
+      }
 
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader(
@@ -376,9 +415,7 @@ class CertificateController {
    */
   async verifyCertificate(req, res, next) {
     try {
-      const { hash } = req.params;
-
-      const result = await certificateService.verifyCertificate(hash);
+      const result = await certificateService.verifyCertificate(req.params.hash);
 
       res.json({
         success: true,
@@ -395,17 +432,80 @@ class CertificateController {
    */
   async revokeCertificate(req, res, next) {
     try {
-      const { id } = req.params;
-      const { reason } = req.body;
+      const certificate = await certificateService.revokeCertificate(
+        req.params.id,
+        req.user.id,
+        req.body.reason
+      );
 
-      const certificate = await certificateService.revokeCertificate(id, reason, req.user.id);
-
-      logger.info(`Certificate revoked: ${certificate.certificateNumber} by admin ${req.user.id}`);
+      logger.info(
+        `Certificate revoked: ${certificate.certificateNumber} by admin ${req.user.id}`
+      );
 
       res.json({
         success: true,
         message: 'Certificate revoked successfully',
         data: { certificate },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Get All Certificates (Admin)
+   * GET /api/v1/certificates
+   */
+  async getAllCertificates(req, res, next) {
+    try {
+      const {
+        page = 1,
+        limit = 20,
+        eventId,
+        status,
+        search,
+        sort = '-issuedDate',
+      } = req.query;
+
+      const query = {};
+      if (eventId) query.eventId = eventId;
+      if (status) query.status = status;
+
+      if (search) {
+        const safeSearch = escapeRegex(String(search).slice(0, 100));
+        query.$or = [
+          { certificateNumber: { $regex: safeSearch, $options: 'i' } },
+          { recipientName: { $regex: safeSearch, $options: 'i' } },
+          { recipientEmail: { $regex: safeSearch, $options: 'i' } },
+        ];
+      }
+
+      const pageNumber = Math.max(1, parseInt(page, 10) || 1);
+      const pageSize = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+      const sortField = CERTIFICATE_SORT_FIELDS.includes(sort) ? sort : '-issuedDate';
+
+      const [certificates, total] = await Promise.all([
+        Certificate.find(query)
+          .populate('userId', 'fullname email')
+          .populate('eventId', 'title startDateTime')
+          .populate('templateId', 'name type')
+          .sort(sortField)
+          .skip((pageNumber - 1) * pageSize)
+          .limit(pageSize),
+        Certificate.countDocuments(query),
+      ]);
+
+      res.json({
+        success: true,
+        data: {
+          certificates,
+          pagination: {
+            page: pageNumber,
+            limit: pageSize,
+            total,
+            totalPages: Math.ceil(total / pageSize) || 1,
+          },
+        },
       });
     } catch (error) {
       next(error);
@@ -419,15 +519,12 @@ class CertificateController {
   async getCertificateStatistics(req, res, next) {
     try {
       const { eventId } = req.query;
-
       const query = {};
-      if (eventId) {
-        query.event = eventId;
-      }
+      if (eventId) query.eventId = eventId;
 
-      const [total, issued, revoked, downloaded] = await Promise.all([
+      const [total, active, revoked, downloaded] = await Promise.all([
         Certificate.countDocuments(query),
-        Certificate.countDocuments({ ...query, status: 'issued' }),
+        Certificate.countDocuments({ ...query, status: 'active' }),
         Certificate.countDocuments({ ...query, status: 'revoked' }),
         Certificate.aggregate([
           { $match: query },
@@ -437,10 +534,11 @@ class CertificateController {
 
       const stats = {
         total,
-        issued,
+        active,
         revoked,
         totalDownloads: downloaded[0]?.total || 0,
-        averageDownloadsPerCertificate: total > 0 ? ((downloaded[0]?.total || 0) / total).toFixed(2) : 0,
+        averageDownloadsPerCertificate:
+          total > 0 ? ((downloaded[0]?.total || 0) / total).toFixed(2) : 0,
       };
 
       res.json({
@@ -458,37 +556,44 @@ class CertificateController {
    */
   async regenerateCertificate(req, res, next) {
     try {
-      const { id } = req.params;
-      const { templateId } = req.body;
-
-      const certificate = await Certificate.findById(id)
-        .populate('user')
-        .populate('event');
+      const certificate = await Certificate.findById(req.params.id);
 
       if (!certificate) {
         throw new AppError('Certificate not found', 404);
       }
 
       if (certificate.status === 'revoked') {
-        throw new AppError('Cannot regenerate revoked certificate', 400);
+        throw new AppError('Cannot regenerate a revoked certificate', 400);
       }
 
-      // Delete old file
-      if (certificate.filePath) {
-        await certificateService.deleteCertificateFile(certificate.filePath);
+      const userId = certificate.userId;
+      const eventId = certificate.eventId;
+      const templateId = req.body.templateId || certificate.templateId;
+
+      const [user, event, template] = await Promise.all([
+        User.findById(userId),
+        Event.findById(eventId),
+        templateId ? CertificateTemplate.findById(templateId) : null,
+      ]);
+
+      if (!user || !event) {
+        throw new AppError('User or event for this certificate was not found', 404);
       }
 
-      // Generate new certificate
-      const newCertificate = await certificateService.generateCertificate({
-        userId: certificate.user._id,
-        eventId: certificate.event._id,
-        templateId: templateId || certificate.template,
-      });
-
-      // Delete old certificate record
+      await certificateService.deleteCertificateFile(certificate.fileUrl);
       await certificate.deleteOne();
 
-      logger.info(`Certificate regenerated: ${certificate.certificateNumber} by admin ${req.user.id}`);
+      const newCertificate = await certificateService.generateCertificate(
+        user,
+        event,
+        template
+      );
+
+      await markCertificateIssued(user, event);
+
+      logger.info(
+        `Certificate regenerated: ${newCertificate.certificateNumber} by admin ${req.user.id}`
+      );
 
       res.json({
         success: true,
