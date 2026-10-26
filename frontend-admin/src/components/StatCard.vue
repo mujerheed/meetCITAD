@@ -11,7 +11,7 @@
           <div v-if="caption" class="stat-caption mt-1">{{ caption }}</div>
         </div>
 
-        <div class="stat-icon" :style="{ background: tint, color: color }">
+        <div class="stat-icon" :style="{ background: tint, color: displayColor }">
           <v-icon size="22">{{ icon }}</v-icon>
         </div>
       </div>
@@ -21,6 +21,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { useTheme } from 'vuetify'
 
 const props = defineProps({
   label: { type: String, required: true },
@@ -31,7 +32,34 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 })
 
+const theme = useTheme()
+const isDark = computed(() => theme.global.name.value === 'dark')
+
+const darkColorMap = {
+  '#0F2A44': '#9DBBDD',
+  '#059669': '#34D399',
+  '#C9A44C': '#E2C47A',
+  '#DC2626': '#F87171',
+  '#D97706': '#FBBF24',
+}
+
+const darkTintMap = {
+  '#0F2A44': 'rgba(157, 187, 221, 0.16)',
+  '#059669': 'rgba(52, 211, 153, 0.16)',
+  '#C9A44C': 'rgba(226, 196, 122, 0.16)',
+  '#DC2626': 'rgba(248, 113, 113, 0.16)',
+  '#D97706': 'rgba(251, 191, 36, 0.16)',
+}
+
+const displayColor = computed(() =>
+  isDark.value ? darkColorMap[props.color] || props.color : props.color
+)
+
 const tint = computed(() => {
+  if (isDark.value) {
+    return darkTintMap[props.color] || 'rgba(157, 187, 221, 0.16)'
+  }
+
   const colors = {
     '#0F2A44': 'rgba(15, 42, 68, 0.07)',
     '#059669': 'rgba(5, 150, 105, 0.1)',

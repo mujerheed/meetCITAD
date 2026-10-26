@@ -192,21 +192,19 @@
             already have a certificate for the event.
           </p>
 
-          <v-select
+          <NativeSelect
             v-model="generateDialog.eventId"
             :items="eventOptions"
             label="Event"
-            variant="outlined"
+            placeholder="Select an event"
             class="mb-3"
-            :rules="[(v) => Boolean(v) || 'Select an event']"
-          ></v-select>
+          />
 
-          <v-select
+          <NativeSelect
             v-model="generateDialog.templateId"
             :items="templateOptions"
             label="Template"
-            variant="outlined"
-          ></v-select>
+          />
         </v-card-text>
         <v-card-actions class="px-6 pb-5">
           <v-spacer></v-spacer>
@@ -255,6 +253,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import StatusChip from '@/components/StatusChip.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import NativeSelect from '@/components/NativeSelect.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { formatDate } from '@/utils/formatters'
 import { downloadBlob } from '@/utils/download'

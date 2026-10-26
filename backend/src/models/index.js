@@ -10,3 +10,6 @@ export { default as Certificate } from './Certificate.js';
 export { default as CertificateTemplate } from './CertificateTemplate.js';
 export { default as Feedback } from './Feedback.js';
 export { default as Notification } from './Notification.js';
+export { default as WeeklyProgram } from './WeeklyProgram.js';
+export { default as WeeklyActivity } from './WeeklyActivity.js';
+export { default as PersonalWeeklyTask } from './PersonalWeeklyTask.js';

@@ -20,9 +20,11 @@ const MAX_DOCUMENT_SIZE = 10 * 1024 * 1024; // 10MB
 const UPLOAD_DIRS = {
   profilePictures: path.join(config.storage.uploadDir, 'profile-pictures'),
   eventBanners: path.join(config.storage.uploadDir, 'event-banners'),
+  weeklyBanners: path.join(config.storage.uploadDir, 'weekly-banners'),
   eventGallery: path.join(config.storage.uploadDir, 'event-gallery'),
   certificates: config.storage.certificateDir,
   templates: config.storage.templateDir,
+  certificateTemplates: path.join(config.storage.uploadDir, 'certificate-templates'),
   temp: path.join(config.storage.uploadDir, 'temp'),
 };
 
@@ -243,6 +245,53 @@ export const processEventBanner = async (req, res, next) => {
   }
 };
 
+// ==================== WEEKLY ACTIVITY BANNER UPLOAD ====================
+
+/**
+ * Upload a weekly activity banner
+ */
+export const uploadWeeklyBanner = createUploader({
+  allowedTypes: IMAGE_TYPES,
+  maxSize: MAX_IMAGE_SIZE,
+  maxFiles: 1,
+}).single('bannerImage');
+
+/**
+ * Process a weekly activity banner and generate a thumbnail.
+ */
+export const processWeeklyBanner = async (req, res, next) => {
+  if (!req.file) return next();
+
+  try {
+    const filename = generateFilename(req.file.originalname);
+    const outputPath = path.join(UPLOAD_DIRS.weeklyBanners, filename);
+
+    await processImage(req.file, outputPath, {
+      width: 1200,
+      height: 630,
+      fit: 'cover',
+      quality: 90,
+    });
+
+    const thumbnailFilename = `thumb-${filename}`;
+    const thumbnailPath = path.join(UPLOAD_DIRS.weeklyBanners, thumbnailFilename);
+
+    await processImage(req.file, thumbnailPath, {
+      width: 400,
+      height: 210,
+      fit: 'cover',
+      quality: 80,
+    });
+
+    req.body.bannerImage = `/uploads/weekly-banners/${filename}`;
+    req.body.thumbnail = `/uploads/weekly-banners/${thumbnailFilename}`;
+
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
+
 // ==================== EVENT GALLERY UPLOAD ====================
 
 /**
@@ -287,10 +336,12 @@ export const processEventGallery = async (req, res, next) => {
 // ==================== CERTIFICATE TEMPLATE UPLOAD ====================
 
 /**
- * Upload certificate template
+ * Upload a pre-designed certificate image. The image becomes the full-page
+ * background for generated PDFs; recipient details and the QR code are
+ * overlaid by the certificate renderer.
  */
 export const uploadCertificateTemplate = createUploader({
-  allowedTypes: [...IMAGE_TYPES, ...DOCUMENT_TYPES],
+  allowedTypes: IMAGE_TYPES,
   maxSize: MAX_DOCUMENT_SIZE,
   maxFiles: 1,
 }).single('templateFile');
@@ -302,23 +353,23 @@ export const processCertificateTemplate = async (req, res, next) => {
   if (!req.file) return next();
 
   try {
-    const filename = generateFilename(req.file.originalname);
-    const outputPath = path.join(UPLOAD_DIRS.templates, filename);
+    const generatedName = generateFilename(req.file.originalname);
+    const baseName = generatedName.replace(/\.[^.]+$/, '');
+    const sourceExtension = path.extname(req.file.originalname).toLowerCase();
+    const format = sourceExtension === '.png' ? 'png' : 'jpeg';
+    const extension = format === 'png' ? 'png' : 'jpg';
+    const filename = `${baseName}.${extension}`;
+    const outputPath = path.join(UPLOAD_DIRS.certificateTemplates, filename);
 
-    // If it's an image, process it
-    if (IMAGE_TYPES.includes(req.file.mimetype)) {
-      await processImage(req.file, outputPath, {
-        width: 2480, // A4 width at 300 DPI
-        height: 3508, // A4 height at 300 DPI
-        fit: 'inside',
-        quality: 95,
-      });
-    } else {
-      // For PDFs, just save as is
-      await saveFile(req.file, UPLOAD_DIRS.templates);
-    }
+    await processImage(req.file, outputPath, {
+      width: 3508,
+      height: 3508,
+      fit: 'inside',
+      quality: 95,
+      format,
+    });
 
-    req.file.path = `/templates/${filename}`;
+    req.file.path = `/uploads/certificate-templates/${filename}`;
     req.body.backgroundImage = req.file.path;
 
     next();

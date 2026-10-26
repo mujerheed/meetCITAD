@@ -213,6 +213,7 @@ export function normalizeRegisteredEvent(raw) {
 export function normalizeCertificate(raw) {
   if (!raw) return null
   const source = { ...raw }
+  const event = source.event || source.eventId
 
   return {
     ...source,
@@ -220,11 +221,11 @@ export function normalizeCertificate(raw) {
     id: source.id || source._id || '',
     title:
       source.eventTitle ||
-      source.event?.title ||
+      event?.title ||
       source.title ||
       'Certificate of Participation',
-    eventTitle: source.eventTitle || source.event?.title || '',
-    eventDate: toDate(source.eventDate || source.event?.date || source.issuedDate),
+    eventTitle: source.eventTitle || event?.title || '',
+    eventDate: toDate(source.eventDate || event?.startDateTime || event?.date || source.issuedDate),
     issuedDate: toDate(source.issuedDate || source.createdAt),
     recipientName: source.recipientName || '',
     certificateNumber: source.certificateNumber || source.certificateId || '',

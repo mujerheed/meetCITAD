@@ -99,7 +99,6 @@
             ></v-checkbox-btn>
           </th>
           <th>Attendee</th>
-          <th>Contact</th>
           <th>Organisation</th>
           <th>Registered</th>
           <th>Attendance</th>
@@ -110,7 +109,7 @@
       <tbody>
         <template v-if="loading">
           <tr v-for="index in 4" :key="index">
-            <td colspan="8">
+            <td colspan="7">
               <v-skeleton-loader type="text" class="pa-0"></v-skeleton-loader>
             </td>
           </tr>
@@ -126,29 +125,28 @@
                 @update:model-value="toggleSelected(attendee)"
               ></v-checkbox-btn>
             </td>
-            <td style="min-width: 200px">
+            <td style="min-width: 220px">
               <div class="d-flex align-center ga-3">
-                <v-avatar size="34" color="primary" class="text-white font-weight-bold">
+                <v-avatar size="34" color="primary" class="text-on-primary font-weight-bold">
                   {{ initials(attendee.fullname) }}
                 </v-avatar>
-                <div>
+                <div class="attendee-identity">
                   <div class="font-weight-medium">{{ attendee.fullname }}</div>
-                  <div class="text-caption text-medium-emphasis">
+                  <div class="text-caption text-medium-emphasis attendee-email" :title="attendee.email">
                     {{ attendee.email }}
+                  </div>
+                  <div v-if="attendee.phone" class="text-caption text-medium-emphasis">
+                    {{ attendee.phone }}
                   </div>
                 </div>
               </div>
             </td>
-            <td style="min-width: 140px">
-              <div class="text-body-2">{{ attendee.phone || '—' }}</div>
-              <div class="text-caption text-medium-emphasis">{{ attendee.email }}</div>
-            </td>
-            <td style="min-width: 150px">{{ attendee.organisation || '—' }}</td>
-            <td style="min-width: 130px">{{ formatDate(attendee.registeredAt) }}</td>
+            <td style="min-width: 120px">{{ attendee.organisation || '—' }}</td>
+            <td style="min-width: 110px">{{ formatDate(attendee.registeredAt) }}</td>
             <td>
               <StatusChip :status="attendee.attended ? 'attended' : 'absent'" />
             </td>
-            <td style="min-width: 150px">
+            <td style="min-width: 130px">
               <div v-if="attendee.attended" class="text-body-2">
                 {{ formatDateTime(attendee.checkInTime) }}
               </div>
@@ -487,6 +485,22 @@ defineExpose({ load, attendees })
 </script>
 
 <style scoped>
+.admin-table :deep(th),
+.admin-table :deep(td) {
+  padding: 10px 12px;
+}
+
+.attendee-identity {
+  min-width: 0;
+}
+
+.attendee-email {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .attendance-metric {
   border: 1px solid var(--admin-border);
   border-radius: 4px;

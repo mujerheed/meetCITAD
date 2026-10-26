@@ -64,7 +64,17 @@ if (config.isDevelopment) {
 // Uploaded event images are public by design. Certificate PDFs are deliberately
 // NOT served statically: they are private records delivered through the
 // authenticated /certificates/:id/download endpoint.
-app.use('/uploads', express.static(config.storage.uploadDir));
+// The portals are served from a different origin than the API in development
+// (and may be in production), so allow public uploads to be embedded elsewhere.
+// Keep the rest of the API protected by Helmet's same-origin default.
+app.use(
+  '/uploads',
+  (req, res, next) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  },
+  express.static(config.storage.uploadDir)
+);
 
 // ============ API ROUTES ============
 // Broad API guard. Sensitive endpoints add stricter per-route limiters.

@@ -4,7 +4,7 @@
     <v-container class="py-8">
       <v-row>
         <v-col cols="12">
-          <h1 class="text-h4 font-weight-bold mb-2" style="color: #0F2A44;">Events</h1>
+          <h1 class="text-h4 font-weight-bold mb-2 text-high-emphasis">Events</h1>
           <p class="text-body-1 text-medium-emphasis">
             Browse and register for CITAD's upcoming programs, workshops, and training sessions.
           </p>

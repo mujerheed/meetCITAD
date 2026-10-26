@@ -155,6 +155,10 @@ recent activity. Data comes from `GET /admin/dashboard` and
 
 - Attendance register supports manual check-in, bulk check-in, undo, search,
   live counts, and reports.
+- Administrators can add a walk-in attendee who did not use the participant app.
+  Existing accounts are matched by email; new records use
+  `registrationSource: admin`. The attendee can be checked in immediately or
+  added to the register for a later manual check-in.
 - The scanner uses the rear camera where available and decodes with `jsqr`.
 - An optional event context warns when a scanned ticket belongs to a different
   event but does not block a valid check-in.
@@ -244,7 +248,7 @@ Methods return plain data to views. Error messages prefer `message`, then
 | Administrators | `GET/POST /admin`, `GET/PUT/DELETE /admin/:id` |
 | Export | `GET /admin/export/:type` |
 | Events | `GET/POST /events`, `GET/PUT/DELETE /events/:id`, publish/cancel/statistics/attendees/QR, banner/gallery uploads |
-| Attendance | `POST /attendance/scan`, manual/bulk/undo check-in, report/search/live |
+| Attendance | `POST /attendance/scan`, add attendee, manual/bulk/undo check-in, report/search/live |
 | Certificates | `GET /certificates`, statistics, templates, generate, bulk-generate, download, revoke, regenerate |
 | Feedback | `GET /feedback`, analytics, respond, flag, delete, export |
 | Notifications | statistics, broadcast, event, reminder, test, cleanup |

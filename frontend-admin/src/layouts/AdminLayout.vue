@@ -50,7 +50,7 @@
     <template #append>
       <v-divider class="drawer-divider"></v-divider>
       <div class="drawer-footer" :class="{ 'drawer-footer--rail': rail && !mobile }">
-        <v-avatar size="34" color="primary" class="text-white font-weight-bold">
+        <v-avatar size="34" color="primary" class="text-on-primary font-weight-bold">
           {{ auth.initials || 'A' }}
         </v-avatar>
         <div v-if="!rail || mobile" class="footer-identity">
@@ -99,37 +99,6 @@
       :aria-label="isDark ? 'Switch to light mode' : 'Switch to dark mode'"
       @click="toggleTheme"
     ></v-btn>
-
-    <v-menu location="bottom end">
-      <template #activator="{ props }">
-        <v-btn
-          v-bind="props"
-          icon="mdi-account-circle-outline"
-          variant="text"
-          aria-label="Account menu"
-          class="d-none d-sm-flex"
-        ></v-btn>
-      </template>
-
-      <v-list density="compact" min-width="220">
-        <v-list-item
-          :subtitle="auth.currentAdmin?.email || ''"
-          :title="auth.displayName"
-        ></v-list-item>
-        <v-divider></v-divider>
-        <v-list-item
-          v-if="auth.can('manage_settings')"
-          prepend-icon="mdi-cog-outline"
-          title="Settings"
-          to="/settings"
-        ></v-list-item>
-        <v-list-item
-          prepend-icon="mdi-logout"
-          title="Sign out"
-          @click="signOut"
-        ></v-list-item>
-      </v-list>
-    </v-menu>
   </v-app-bar>
 
   <v-main class="admin-main">
@@ -157,7 +126,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useDisplay, useTheme } from 'vuetify'
 import { useAuthStore } from '@/stores/auth'
-import logo from '@/assets/images/logo-symbol.png'
+import logoDark from '@/assets/images/logo-symbol-transparent.png'
+import logoLight from '@/assets/images/logo-symbol-light.png'
 
 const route = useRoute()
 const router = useRouter()
@@ -170,6 +140,7 @@ const rail = ref(false)
 const online = ref(typeof navigator === 'undefined' ? true : navigator.onLine)
 
 const isDark = computed(() => theme.global.name.value === 'dark')
+const logo = computed(() => (isDark.value ? logoLight : logoDark))
 const pageTitle = computed(() => route.meta.title || 'Administration')
 const breadcrumb = computed(() => {
   if (route.meta.parent) return `Administration / ${route.meta.parent}`
@@ -199,6 +170,12 @@ const groups = [
         icon: 'mdi-calendar-text-outline',
         to: '/events',
         match: ['/events'],
+      },
+      {
+        name: 'WeeklyPrograms',
+        title: 'Weekly Programs',
+        icon: 'mdi-calendar-week-outline',
+        to: '/weekly',
       },
       {
         name: 'Attendance',

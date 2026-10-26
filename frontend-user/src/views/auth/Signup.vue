@@ -3,10 +3,10 @@
     <v-row align="center" justify="center">
       <v-col cols="12" sm="10" md="8" lg="6">
         <v-card class="pa-4">
-          <v-card-title class="text-h4 text-center mb-2" style="color: #0F2A44;">
+          <v-card-title class="text-h4 text-center mb-2 text-high-emphasis">
             Create Account
           </v-card-title>
-          <v-card-subtitle class="text-center mb-4" style="color: #6B7280;">
+          <v-card-subtitle class="text-center mb-4 text-medium-emphasis signup-subtitle">
             Join CITAD's community of stakeholders, professionals, and changemakers
           </v-card-subtitle>
           
@@ -131,7 +131,10 @@
               <v-row class="mt-2">
                 <v-col cols="12" class="text-center">
                   Already have an account?
-                  <router-link to="/login" class="text-decoration-none">
+                  <router-link
+                    :to="route.query.redirect ? { name: 'Login', query: { redirect: route.query.redirect } } : '/login'"
+                    class="text-decoration-none"
+                  >
                     Login
                   </router-link>
                 </v-col>
@@ -146,9 +149,10 @@
 
 <script setup>
 import { ref, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 
+const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
@@ -231,7 +235,10 @@ const handleSubmit = async () => {
     // The API requires email verification before the account can log in.
     router.push({
       name: 'VerifyEmail',
-      query: { email: form.value.email },
+      query: {
+        email: form.value.email,
+        ...(route.query.redirect ? { redirect: route.query.redirect } : {}),
+      },
     })
   } catch (error) {
     // Error is handled in the store
@@ -239,3 +246,10 @@ const handleSubmit = async () => {
   }
 }
 </script>
+
+<style scoped>
+.signup-subtitle {
+  white-space: normal;
+  line-height: 1.5;
+}
+</style>

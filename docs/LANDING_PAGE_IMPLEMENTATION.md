@@ -2,7 +2,14 @@
 
 **Date:** December 17, 2025  
 **Version:** 2.0  
-**Status:** ✅ Production Ready
+**Status:** Historical implementation record — not a current production-readiness assessment
+
+> **26 October 2026 update:** The participant carousel, auth prompt, account CTA,
+> responsive footer, and dark mode are retained. Unsupported impact figures have
+> been removed in favour of the attendance-workflow strip, and official CITAD
+> details have been corrected. The older diagrams/code below describe the 2025
+> design, not the current rendered page. See
+> [CITAD_ALIGNMENT.md](./CITAD_ALIGNMENT.md) for current changes and release gates.
 
 ---
 
@@ -339,6 +346,9 @@ Border:     rgba(255, 255, 255, 0.08) /* Subtle white */
 - Responsive: Stacks vertically on mobile (<960px)
 
 ### 7.2 Impact Statistics
+
+**Historical only:** these unsourced figures were removed on 26 October 2026.
+The current strip explains Discover → Register → Check in → Certificates.
 
 **Data Points:**
 - **305** — Events Organized

@@ -3,7 +3,7 @@
     <div class="login-panel">
       <div class="login-panel-inner">
         <div class="d-flex align-center ga-3 mb-10">
-          <img :src="logoWhite" alt="meetCITAD" class="panel-logo" />
+          <img :src="logoMark" alt="meetCITAD" class="panel-logo" />
           <div>
             <div class="panel-brand">meetCITAD</div>
             <div class="panel-brand-sub">Administration Portal</div>
@@ -39,8 +39,8 @@
 
     <div class="login-form-side">
       <div class="login-form-wrap">
-        <div class="mobile-brand d-flex align-center ga-3 mb-8">
-          <img :src="logoSymbol" alt="meetCITAD" class="mobile-logo" />
+        <div class="mobile-brand align-center ga-3 mb-8">
+          <img :src="mobileLogo" alt="meetCITAD" class="mobile-logo" />
           <div>
             <div class="panel-brand text-primary">meetCITAD</div>
             <div class="panel-brand-sub text-medium-emphasis">Administration</div>
@@ -266,16 +266,22 @@
 </template>
 
 <script setup>
-import { reactive, ref } from 'vue'
+import { computed, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { useTheme } from 'vuetify'
 import { useAuthStore } from '@/stores/auth'
-import logoSymbol from '@/assets/images/logo-symbol.png'
-import logoWhite from '@/assets/images/logo-white.png'
-import citadLogo from '@/assets/images/citad-logo.png'
+import logoSymbol from '@/assets/images/logo-symbol-transparent.png'
+import logoMark from '@/assets/images/logo-symbol-light.png'
+import citadLogo from '@/assets/images/citad-logo-transparent.png'
 
 const route = useRoute()
 const router = useRouter()
+const theme = useTheme()
 const auth = useAuthStore()
+
+const mobileLogo = computed(() =>
+  theme.global.name.value === 'dark' ? logoMark : logoSymbol
+)
 
 const formRef = ref(null)
 const showPassword = ref(false)
@@ -454,7 +460,7 @@ const submit = async () => {
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('@/assets/images/logo-symbol.png');
+  background-image: url('@/assets/images/logo-symbol-light.png');
   background-repeat: no-repeat;
   background-position: right -80px bottom -60px;
   background-size: 420px;
@@ -683,6 +689,8 @@ const submit = async () => {
 
 .mobile-brand {
   display: none;
+  align-items: center;
+  gap: 12px;
 }
 
 @media (max-width: 960px) {

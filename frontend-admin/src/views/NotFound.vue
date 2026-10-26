@@ -28,7 +28,7 @@
 
 <script setup>
 import { useRouter } from 'vue-router'
-import logoSymbol from '@/assets/images/logo-symbol.png'
+import logoSymbol from '@/assets/images/logo-symbol-transparent.png'
 
 const router = useRouter()
 

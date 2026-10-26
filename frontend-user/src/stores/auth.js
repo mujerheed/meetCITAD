@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import api, { getErrorMessage } from '@/api'
 import { normalizeUser, resolveMediaUrl } from '@/utils/normalizers'
+import { cacheClear } from '@/utils/offline'
 
 function readStoredUser() {
   try {
@@ -70,14 +71,7 @@ export const useAuthStore = defineStore('auth', {
 
       // Remove participant-specific offline caches so a shared device does not
       // keep another person's events or ticket QR after sign-out.
-      try {
-        Object.keys(localStorage)
-          .filter((key) => key.startsWith('meetcitad:'))
-          .forEach((key) => localStorage.removeItem(key))
-      } catch {
-        // Storage may be unavailable in private modes; session state is still
-        // cleared above.
-      }
+      cacheClear()
     },
 
     async signup(userData) {

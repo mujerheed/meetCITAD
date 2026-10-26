@@ -272,7 +272,7 @@
               :key="user._id"
               class="recent-user"
             >
-              <v-avatar size="32" color="primary" class="text-white font-weight-bold">
+              <v-avatar size="32" color="primary" class="text-on-primary font-weight-bold">
                 {{ initials(user.fullname) }}
               </v-avatar>
               <div class="recent-user-info">

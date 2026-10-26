@@ -4,6 +4,12 @@
 
 A modern, scalable platform for managing events, automating attendance with QR codes, generating certificates, and engaging participants.
 
+meetCITAD complements [CITAD's official website](https://citad.org.ng/); it does
+not replace its institutional news, publications, careers, or other services.
+See [implemented changes and the event-attendance roadmap](./docs/CITAD_ALIGNMENT.md)
+for factual corrections, current validation, remaining release gates, and
+future proposals requiring CITAD approval.
+
 ---
 
 ## 🎯 Features
@@ -16,9 +22,10 @@ A modern, scalable platform for managing events, automating attendance with QR c
 - ✅ Automatic registration emails
 - ✅ Event feedback submission
 - ✅ Calendar integration (.ics download)
-- ✅ Certificate download
+- ✅ Institutional certificate download with verification QR
 - ✅ Notification center
 - ✅ Profile management
+- ✅ Weekly schedules, private tasks, and calendar downloads
 
 ### Admin Features
 - ✅ Staff signup with OTP verification
@@ -26,11 +33,16 @@ A modern, scalable platform for managing events, automating attendance with QR c
 - ✅ QR attendance scanning (online/offline)
 - ✅ Attendance export (Excel/PDF)
 - ✅ Certificate generator (template/auto)
+- ✅ Pre-designed certificate image upload and adjustable text/QR overlays
 - ✅ Feedback analytics
 - ✅ Manual attendee addition
 - ✅ Broadcast notifications
 - ✅ Event analytics dashboard
 - ✅ Audit logging
+- ✅ Weekly planning, visibility, public-only exports, and explicitly confirmed notifications
+
+Email/SMS delivery depends on configured providers. Local Redis/queue fallback
+and successful builds do not establish production readiness.
 
 ---
 
@@ -54,7 +66,7 @@ A modern, scalable platform for managing events, automating attendance with QR c
 **DevOps:**
 - Docker & Docker Compose
 - NGINX (reverse proxy)
-- GitHub Actions (CI/CD)
+- GitHub Actions (CI/CD — planned, not configured)
 
 ---
 
@@ -129,7 +141,12 @@ docker-compose down
 
 ## 📚 Documentation
 
+- [Documentation Index](./docs/README.md)
+- [CITAD Alignment, Changes, and Event-Attendance Roadmap](./docs/CITAD_ALIGNMENT.md)
+- [Security Baseline](./docs/SECURITY.md)
+- [Non-Functional Requirements — Proposed Targets](./docs/NON_FUNCTIONAL_REQUIREMENTS.md)
 - [Architecture Overview](./docs/architecture/README.md)
+- [Weekly Programs](./docs/WEEKLY_PROGRAMS.md)
 - [API Documentation](./docs/api/README.md) (Swagger UI: http://localhost:3000/api-docs)
 - [Database Schema](./docs/database/README.md)
 - [Developer Guide](./docs/development/README.md)
@@ -235,11 +252,21 @@ MIT License - see LICENSE file for details
 
 For issues and questions:
 - GitHub Issues: [Create an issue](https://github.com/mujerheed/meetCITAD/issues)
-- Email: support@citad.org
+- CITAD general contact: [info@citad.org](mailto:info@citad.org)
+- Official contact information: [citad.org.ng/contact/](https://citad.org.ng/contact/)
+- Dedicated meetCITAD support ownership requires CITAD confirmation.
 
 ---
 
 ## 🗓️ Changelog
+
+### October 2026 — Local v2 updates, pending release approval
+- Weekly scheduling reuses existing event registration, attendance, and certificate workflows.
+- Hardened authentication, permissions, QR validation, and certificate access.
+- Institutional certificates and approved pre-designed image templates.
+- Corrected official CITAD details; removed unsupported public impact figures.
+- Documented source caveats and an event-attendance-only future roadmap.
+- See [current checks and release prerequisites](./docs/CITAD_ALIGNMENT.md#7-validation-and-release-status).
 
 ### Version 2.0.0 (December 2025)
 - Complete rebuild with Vue 3 and modern stack

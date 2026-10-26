@@ -12,3 +12,5 @@ export { default as feedbackController } from './feedback.controller.js';
 export { default as notificationController } from './notification.controller.js';
 export { default as adminController } from './admin.controller.js';
 export { default as queueController } from './queue.controller.js';
+export { default as weeklyProgramController } from './weeklyProgram.controller.js';
+export { default as weeklyTaskController } from './weeklyTask.controller.js';

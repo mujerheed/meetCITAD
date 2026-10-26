@@ -3,6 +3,7 @@ import { attendanceController } from '../controllers/index.js';
 import {
   protect,
   restrictTo,
+  restrictAdminRole,
   checkPermission,
   scanLimiter,
 } from '../middleware/index.js';
@@ -21,6 +22,11 @@ router.post(
   attendanceController.scanQRCode.bind(attendanceController)
 );
 router.post('/manual-checkin', attendanceController.manualCheckIn.bind(attendanceController));
+router.post(
+  '/add-attendee',
+  restrictAdminRole('super_admin', 'event_manager', 'staff'),
+  attendanceController.addAttendee.bind(attendanceController)
+);
 router.post('/bulk-checkin', attendanceController.bulkCheckIn.bind(attendanceController));
 router.post('/undo-checkin', attendanceController.undoCheckIn.bind(attendanceController));
 

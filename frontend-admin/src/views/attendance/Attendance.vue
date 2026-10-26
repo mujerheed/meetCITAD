@@ -9,6 +9,15 @@
         <v-btn variant="outlined" color="primary" prepend-icon="mdi-refresh" :loading="loading" @click="load">
           Refresh
         </v-btn>
+        <v-btn
+          variant="outlined"
+          color="primary"
+          prepend-icon="mdi-account-plus-outline"
+          :disabled="!selectedEventId"
+          @click="showAddAttendee = true"
+        >
+          Add attendee
+        </v-btn>
         <v-btn color="accent" variant="flat" elevation="0" prepend-icon="mdi-qrcode-scan" to="/scanner">
           Open Scanner
         </v-btn>
@@ -123,6 +132,7 @@
           </div>
 
           <AttendanceTable
+            ref="attendanceTable"
             :key="selectedEventId"
             :event-id="selectedEventId"
             :event-title="selectedEvent?.title || liveStats.eventTitle || ''"
@@ -130,6 +140,13 @@
           />
         </v-card-text>
       </v-card>
+
+      <AddAttendeeDialog
+        v-model="showAddAttendee"
+        :event-id="selectedEventId"
+        :event-title="selectedEvent?.title || liveStats.eventTitle || ''"
+        @added="onAttendeeAdded"
+      />
     </template>
   </div>
 </template>
@@ -142,6 +159,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import StatCard from '@/components/StatCard.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import AttendanceTable from '@/components/AttendanceTable.vue'
+import AddAttendeeDialog from '@/components/AddAttendeeDialog.vue'
 import { formatDate } from '@/utils/formatters'
 
 const route = useRoute()
@@ -155,6 +173,8 @@ const liveLoading = ref(false)
 const loading = ref(false)
 const error = ref(null)
 const lastUpdated = ref('')
+const showAddAttendee = ref(false)
+const attendanceTable = ref(null)
 let refreshTimer
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('en-US')
@@ -224,6 +244,10 @@ const load = async () => {
 
 const onAttendanceUpdated = () => {
   loadLive()
+}
+
+const onAttendeeAdded = async () => {
+  await Promise.all([attendanceTable.value?.load?.(), loadLive()])
 }
 
 watch(selectedEventId, async (value) => {

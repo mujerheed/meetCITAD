@@ -2,6 +2,11 @@
 
 Welcome to the meetCITAD v2 documentation. This folder contains comprehensive documentation for the entire system.
 
+meetCITAD is CITAD's **event-attendance solution**, not a replacement for
+[CITAD's official website](https://citad.org.ng/). For the current changes,
+official-source caveats, validation status, and approval-based future work, start
+with [CITAD Alignment and Event-Attendance Roadmap](./CITAD_ALIGNMENT.md).
+
 ## 📁 Documentation Structure
 
 ```
@@ -50,8 +55,14 @@ docs/
 - [Monitoring](./deployment/monitoring.md)
 
 ### Governance and Quality
+- [CITAD Alignment, Implemented Changes, and Event-Attendance Roadmap](./CITAD_ALIGNMENT.md)
+- [Weekly Programs — Implemented MVP](./WEEKLY_PROGRAMS.md)
 - [Security Architecture and Controls](./SECURITY.md)
 - [Non-Functional Requirements](./NON_FUNCTIONAL_REQUIREMENTS.md)
+
+Security/NFR documents remain baselines; proposed targets require CITAD approval.
+Older design and implementation records are historical and do not establish
+production readiness. Use the alignment document's release status for this pass.
 
 ## 🎯 Project Overview
 
@@ -130,9 +141,11 @@ docs/
 ## 🤝 Support
 
 For questions or issues:
-- Email: support@citad.org
+- CITAD general contact: [info@citad.org](mailto:info@citad.org)
+- Official contact information: [citad.org.ng/contact/](https://citad.org.ng/contact/)
+- Dedicated meetCITAD support ownership remains to be confirmed by CITAD.
 - GitHub Issues: [meetCITAD Repository]
 
 ---
 
-**Last Updated:** December 2, 2025
+**Last Updated:** October 26, 2026

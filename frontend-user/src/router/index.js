@@ -45,6 +45,24 @@ const routes = [
     meta: { requiresAuth: false }
   },
   {
+    path: '/about',
+    name: 'About',
+    component: () => import('@/views/About.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/weekly',
+    name: 'WeeklySchedule',
+    component: () => import('@/views/weekly/WeeklySchedule.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
+    path: '/weekly/activities/:id',
+    name: 'WeeklyActivityDetails',
+    component: () => import('@/views/weekly/WeeklyActivityDetails.vue'),
+    meta: { requiresAuth: false }
+  },
+  {
     path: '/events/:id/feedback',
     name: 'EventFeedback',
     component: () => import('@/views/events/EventFeedback.vue'),

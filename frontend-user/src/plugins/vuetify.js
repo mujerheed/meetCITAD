@@ -34,15 +34,16 @@ const vuetify = createVuetify({
       },
       dark: {
         colors: {
-          primary: '#0F2A44',       // Deep Institutional Blue maintained
-          secondary: '#374151',     // Dark Gray
+          primary: '#9DBBDD',       // Accessible blue on dark surfaces
+          secondary: '#CBD5E1',
           accent: '#C9A44C',        // Muted Gold (sparingly)
-          error: '#DC2626',
-          info: '#0F2A44',
-          success: '#059669',
-          warning: '#D97706',
+          error: '#F87171',
+          info: '#9DBBDD',
+          success: '#34D399',
+          warning: '#FBBF24',
           background: '#1A1D23',    // Very dark neutral (approved)
           surface: '#2A2E35',       // Slightly lighter for cards
+          'surface-variant': '#333842',
         },
       },
     },

@@ -4,6 +4,12 @@
 **Last Updated:** December 17, 2025  
 **Organization:** Centre for Information Technology and Development (CITAD), Kano
 
+> **Current factual content:** Refer to
+> [CITAD_ALIGNMENT.md](./CITAD_ALIGNMENT.md) for the 26 October 2026 official-source
+> corrections and event-attendance scope. Historical impact examples in this
+> design document are not verified institutional figures and must not be used
+> as public statistics. Security/NFR targets remain subject to CITAD approval.
+
 ---
 
 ## 1. Design Philosophy
@@ -109,6 +115,44 @@ CITAD (Primary Organization)
   contain
 ></v-img>
 ```
+
+### Official Certificate
+
+Generated certificates follow CITAD’s printed certificate rather than a generic
+event template:
+
+- A4 landscape with a blue double frame, stepped corner brackets, and a light
+  CITAD watermark.
+- CITAD wordmark on the left, the institutional address in the centre, and the
+  CPN accreditation mark on the right.
+- Recipient name in the bundled Great Vibes script on a ruled line.
+- Event statement on a pale-blue highlight, followed by the event date range.
+- Two default signature areas (`Training Facilitator, CITAD` and
+  `Executive Director, CITAD`) with room for names or uploaded signatures.
+- A verification QR code and certificate number in the lower corners.
+
+Certificate-only assets live in `backend/assets/`:
+
+| Asset | Purpose |
+|-------|---------|
+| `certificates/citad-logo.png` | Transparent CITAD wordmark for the PDF header |
+| `certificates/cpn-logo.png` | CPN accreditation mark |
+| `fonts/GreatVibes-Regular.ttf` | Recipient-name script (OFL licence included) |
+
+The layout is implemented in
+`backend/src/services/certificateLayout.service.js`. Template title, wording,
+border colour, background colour, font sizes, and signatures are still read
+from the selected certificate template. Existing issued PDFs are not changed;
+regenerate a certificate to apply the institutional layout.
+
+Administrators can also upload an already-designed certificate image in the
+template editor. The image is stored under `uploads/certificate-templates/` and
+used as the full-page background; the recipient name, event statement,
+certificate number, verification link, and QR code are overlaid. Name and
+statement positions are adjustable in millimetres, so the overlaid details can
+line up with blank fields in the uploaded design. Signature lines are not added
+on top of an uploaded design because the design is expected to contain its own
+authorised signature areas. PNG, JPG, and WebP images up to 10 MB are accepted.
 
 ---
 

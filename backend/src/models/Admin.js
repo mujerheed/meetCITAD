@@ -72,6 +72,8 @@ const AdminSchema = new Schema(
           'view_analytics',
           'export_data',
           'manage_settings',
+          'manage_weekly_programs',
+          'publish_weekly_programs',
         ],
       },
     ],
@@ -276,6 +278,8 @@ AdminSchema.pre('save', function (next) {
       'view_analytics',
       'export_data',
       'manage_settings',
+      'manage_weekly_programs',
+      'publish_weekly_programs',
     ],
     event_manager: [
       'create_event',
@@ -286,8 +290,15 @@ AdminSchema.pre('save', function (next) {
       'send_notifications',
       'view_analytics',
       'export_data',
+      'manage_weekly_programs',
+      'publish_weekly_programs',
     ],
-    staff: ['view_reports', 'generate_certificates', 'view_analytics'],
+    staff: [
+      'view_reports',
+      'generate_certificates',
+      'view_analytics',
+      'manage_weekly_programs',
+    ],
     auditor: ['view_reports', 'view_analytics'],
   };
 

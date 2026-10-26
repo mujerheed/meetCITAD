@@ -24,6 +24,7 @@ const map = {
   ongoing: { label: 'Ongoing', color: 'info', icon: 'mdi-play-circle-outline' },
   completed: { label: 'Completed', color: 'primary', icon: 'mdi-flag-checkered' },
   cancelled: { label: 'Cancelled', color: 'error', icon: 'mdi-cancel' },
+  archived: { label: 'Archived', color: 'grey', icon: 'mdi-archive-outline' },
   active: { label: 'Active', color: 'success', icon: 'mdi-check-circle-outline' },
   inactive: { label: 'Inactive', color: 'grey', icon: 'mdi-pause-circle-outline' },
   suspended: { label: 'Suspended', color: 'warning', icon: 'mdi-alert-circle-outline' },

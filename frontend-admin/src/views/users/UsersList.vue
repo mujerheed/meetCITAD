@@ -89,7 +89,7 @@
             >
               <td style="min-width: 210px">
                 <div class="d-flex align-center ga-3">
-                  <v-avatar size="36" color="primary" class="text-white font-weight-bold">
+                  <v-avatar size="36" color="primary" class="text-on-primary font-weight-bold">
                     <v-img v-if="user.profileImage" :src="resolveMediaUrl(user.profileImage)" cover></v-img>
                     <template v-else>{{ initials(user.fullname) }}</template>
                   </v-avatar>

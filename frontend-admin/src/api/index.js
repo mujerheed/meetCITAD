@@ -359,6 +359,113 @@ export default {
     },
   },
 
+  // ------------------------------------------------------ Weekly Programs
+  weeklyPrograms: {
+    week: async (weekStart) => {
+      const response = await api.get('/admin/weekly-programs', {
+        params: weekStart ? { weekStart } : {},
+      })
+      return unwrap(response) || {}
+    },
+    get: async (id) => {
+      const response = await api.get(`/admin/weekly-programs/${id}`)
+      return unwrap(response) || {}
+    },
+    create: async (data) => {
+      const response = await api.post('/admin/weekly-programs', data)
+      return unwrap(response) || {}
+    },
+    update: async (id, data) => {
+      const response = await api.patch(`/admin/weekly-programs/${id}`, data)
+      return unwrap(response) || {}
+    },
+    publish: async (id) => {
+      const response = await api.post(`/admin/weekly-programs/${id}/publish`)
+      return unwrap(response) || {}
+    },
+    unpublish: async (id) => {
+      const response = await api.post(`/admin/weekly-programs/${id}/unpublish`)
+      return unwrap(response) || {}
+    },
+    archive: async (id) => {
+      const response = await api.delete(`/admin/weekly-programs/${id}`)
+      return unwrap(response) || {}
+    },
+    preview: async (id) => {
+      const response = await api.get(`/admin/weekly-programs/${id}/preview`)
+      return unwrap(response) || {}
+    },
+    summary: async (id, format = 'whatsapp') => {
+      const response = await api.get(`/admin/weekly-programs/${id}/summary`, {
+        params: { format },
+      })
+      return unwrap(response) || {}
+    },
+    exportSummary: async (id, format = 'txt') => {
+      const response = await api.get(`/admin/weekly-programs/${id}/export`, {
+        params: { format },
+        responseType: 'blob',
+      })
+      return response
+    },
+    calendar: async (id) => {
+      const response = await api.get(`/admin/weekly-programs/${id}/calendar.ics`, {
+        responseType: 'blob',
+      })
+      return response
+    },
+    notify: async (id, data) => {
+      const response = await api.post(`/admin/weekly-programs/${id}/notify`, data)
+      return { ...unwrap(response), message: getApiMessage(response) }
+    },
+    activities: async (id, params = {}) => {
+      const response = await api.get(`/admin/weekly-programs/${id}/activities`, {
+        params,
+      })
+      return unwrap(response)?.activities || []
+    },
+    activity: async (id, activityId) => {
+      const response = await api.get(
+        `/admin/weekly-programs/${id}/activities/${activityId}`
+      )
+      return unwrap(response)?.activity || null
+    },
+    createActivity: async (id, data) => {
+      const response = await api.post(`/admin/weekly-programs/${id}/activities`, data)
+      return unwrap(response)?.activity || null
+    },
+    addEvent: async (id, data) => {
+      const response = await api.post(
+        `/admin/weekly-programs/${id}/activities/from-event`,
+        data
+      )
+      return unwrap(response)?.activity || null
+    },
+    updateActivity: async (id, activityId, data) => {
+      const response = await api.patch(
+        `/admin/weekly-programs/${id}/activities/${activityId}`,
+        data
+      )
+      return unwrap(response)?.activity || null
+    },
+    archiveActivity: async (id, activityId) => {
+      const response = await api.delete(
+        `/admin/weekly-programs/${id}/activities/${activityId}`
+      )
+      return unwrap(response)?.activity || null
+    },
+    uploadBanner: async (id, activityId, file) => {
+      const formData = new FormData()
+      formData.append('bannerImage', file)
+      const response = await api.post(
+        `/admin/weekly-programs/${id}/activities/${activityId}/banner`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      )
+      return unwrap(response)?.activity || null
+    },
+  },
+
   // ---------------------------------------------------------- Attendance
   attendance: {
     scan: async (qrData) => {
@@ -369,6 +476,13 @@ export default {
       const response = await api.post('/attendance/manual-checkin', {
         eventId,
         userId,
+      })
+      return { ...unwrap(response), message: getApiMessage(response) }
+    },
+    addAttendee: async (eventId, attendee) => {
+      const response = await api.post('/attendance/add-attendee', {
+        eventId,
+        ...attendee,
       })
       return { ...unwrap(response), message: getApiMessage(response) }
     },
@@ -439,6 +553,20 @@ export default {
     },
     createTemplate: async (data) => {
       const response = await api.post('/certificates/templates', data)
+      return unwrap(response)?.template || null
+    },
+    uploadTemplateBackground: async (id, file) => {
+      const formData = new FormData()
+      formData.append('templateFile', file)
+      const response = await api.post(
+        `/certificates/templates/${id}/background`,
+        formData,
+        { headers: { 'Content-Type': 'multipart/form-data' } }
+      )
+      return unwrap(response)?.template || null
+    },
+    removeTemplateBackground: async (id) => {
+      const response = await api.delete(`/certificates/templates/${id}/background`)
       return unwrap(response)?.template || null
     },
     updateTemplate: async (id, data) => {

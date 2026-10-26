@@ -131,6 +131,9 @@ ticket QR as **confidential** and avoid displaying it publicly.
   notification, queue, attendance, and event-mutation route groups.
 - Attendance scanning and manual check-in are administrator-only and require
   `view_reports`.
+- Walk-in attendee creation is limited to `super_admin`, `event_manager`, and
+  `staff` roles. Read-only auditors are rejected even though they can view
+  attendance reports.
 - Frontend navigation still hides inaccessible items for usability, but it is no
   longer the only enforcement layer.
 
@@ -215,8 +218,9 @@ Required controls now applied:
 2. Non-super administrators cannot change another administrator's status,
    role, or permissions.
 3. Administrators cannot change their own role, permissions, or status.
-4. QR scanning and manual check-in are restricted to administrators with
-   `view_reports`.
+4. QR scanning, manual check-in, and walk-in attendee creation are restricted
+   to administrators; walk-in creation additionally rejects the read-only
+   auditor role.
 5. Object ownership checks remain on participant feedback and certificate
    routes.
 6. Administrator list/detail and export queries exclude password hashes, TOTP
@@ -491,6 +495,10 @@ database. All checks passed (`37/37`):
 - rate limiting after repeated failed administrator logins;
 - absence of `fileUrl` in certificate responses.
 
+Additional walk-in checks were run on 20 October 2026: authenticated creation
+and idempotent repeat-add passed, while anonymous requests returned `401` and
+read-only auditor requests returned `403`.
+
 This is a manual verification, not a substitute for the automated regression
 suite required by SEC-12.
 
@@ -530,7 +538,7 @@ Data Protection Officer, IT Operations, and Communications.
 | SEC-01 | Critical | Certificate PDFs served from a public static directory | Removed public mount; every download is authenticated | Code complete; public URL verified 404 |
 | SEC-02 | Critical | Administrative permissions not enforced by the API | Applied `checkPermission` across administrative route groups | Code complete; manual smoke passed; automated tests pending |
 | SEC-03 | High | Rate limiters were not mounted | Wired auth, scan, upload, export, admin, and global API limiters | Code complete; manual smoke passed; verify Redis counters in production |
-| SEC-04 | High | Any authenticated user could submit attendance scans | Scanning and manual check-in restricted to administrators with `view_reports` | Code complete; verified in manual smoke |
+| SEC-04 | High | Any authenticated user could submit attendance scans | Scanning, manual check-in, and walk-in creation restricted to administrators; walk-in creation rejects the auditor role | Code complete; verified in manual smoke |
 | SEC-05 | High | Admin password change did not revoke existing tokens | Added `changedPasswordAfter`, token versions, and refresh checks | Code complete; verified in manual smoke |
 | SEC-06 | High | Access and refresh tokens stored in `localStorage` | Move to hardened cookies or memory plus protected refresh cookie | Open |
 | SEC-07 | High | QR signing key fell back to a known default | Development derives a local key; production fails without a strong secret | Code complete |

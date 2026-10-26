@@ -38,7 +38,7 @@
       <v-card class="admin-card mb-4" elevation="0">
         <v-card-text class="pa-6">
           <div class="profile-hero">
-            <v-avatar size="76" color="primary" class="text-white font-weight-bold">
+            <v-avatar size="76" color="primary" class="text-on-primary font-weight-bold">
               <v-img v-if="user.profileImage" :src="resolveMediaUrl(user.profileImage)" cover></v-img>
               <template v-else>{{ initials(user.fullname) }}</template>
             </v-avatar>

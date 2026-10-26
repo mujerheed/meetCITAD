@@ -71,7 +71,8 @@
             {{ errorMessage || result?.message || 'We could not verify this certificate.' }}
           </p>
           <p class="text-caption text-medium-emphasis mb-6">
-            If you believe this is an error, please contact CITAD at info@citad.org.
+            If you believe this is an error, please contact CITAD at
+            <a :href="`mailto:${citad.email}`">{{ citad.email }}</a>.
           </p>
           <v-btn color="primary" variant="outlined" to="/">
             Return to meetCITAD
@@ -135,6 +136,7 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api, { getErrorMessage } from '@/api'
 import { formatDate } from '@/utils/formatters'
+import { citad } from '@/utils/citad'
 
 const route = useRoute()
 const router = useRouter()

@@ -16,6 +16,18 @@ const toId = (value) => (value?._id ? value._id.toString() : value?.toString());
 const escapeRegex = (value = '') =>
   String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const uploadedTemplatePath = (value) => {
+  if (!value || !String(value).startsWith('/uploads/certificate-templates/')) {
+    return null;
+  }
+
+  return path.join(
+    config.storage.uploadDir,
+    'certificate-templates',
+    path.basename(String(value))
+  );
+};
+
 const CERTIFICATE_SORT_FIELDS = [
   '-issuedDate',
   'issuedDate',
@@ -157,6 +169,78 @@ class CertificateController {
       res.json({
         success: true,
         message: 'Template updated successfully',
+        data: { template },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Upload or replace a pre-designed certificate image
+   * POST /api/v1/certificates/templates/:id/background
+   */
+  async uploadTemplateBackground(req, res, next) {
+    try {
+      if (!req.file || !req.body.backgroundImage) {
+        throw new AppError('Upload a certificate design image to continue', 400);
+      }
+
+      const template = await CertificateTemplate.findById(req.params.id);
+      if (!template) {
+        throw new AppError('Template not found', 404);
+      }
+
+      const previous = template.design?.backgroundImage;
+      template.design = template.design || {};
+      template.design.backgroundImage = req.body.backgroundImage;
+      template.lastModifiedBy = req.user.id;
+      await template.save();
+
+      const previousPath = uploadedTemplatePath(previous);
+      if (previousPath && previousPath !== uploadedTemplatePath(req.body.backgroundImage)) {
+        await fs.unlink(previousPath).catch(() => {});
+      }
+
+      logger.info(
+        `Certificate template design uploaded: ${template.name} by admin ${req.user.id}`
+      );
+
+      res.json({
+        success: true,
+        message: 'Certificate design uploaded successfully',
+        data: { template },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Remove an uploaded certificate design
+   * DELETE /api/v1/certificates/templates/:id/background
+   */
+  async removeTemplateBackground(req, res, next) {
+    try {
+      const template = await CertificateTemplate.findById(req.params.id);
+      if (!template) {
+        throw new AppError('Template not found', 404);
+      }
+
+      const previous = template.design?.backgroundImage;
+      template.design = template.design || {};
+      template.design.backgroundImage = null;
+      template.lastModifiedBy = req.user.id;
+      await template.save();
+
+      const previousPath = uploadedTemplatePath(previous);
+      if (previousPath) {
+        await fs.unlink(previousPath).catch(() => {});
+      }
+
+      res.json({
+        success: true,
+        message: 'Uploaded certificate design removed',
         data: { template },
       });
     } catch (error) {

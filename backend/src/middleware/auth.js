@@ -127,6 +127,27 @@ export const restrictTo = (...roles) => {
 };
 
 /**
+ * Restrict an action to specific administrator roles.
+ *
+ * Permissions decide what an administrator can do; role checks are used for
+ * sensitive writes where a read-only role such as auditor must never mutate
+ * records even if it has a broader reporting permission.
+ */
+export const restrictAdminRole = (...roles) => {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return next(
+        new AppError(
+          'This action requires an operational administrator role.',
+          403
+        )
+      );
+    }
+    next();
+  };
+};
+
+/**
  * Check Admin Permissions
  */
 export const checkPermission = (...permissions) => {

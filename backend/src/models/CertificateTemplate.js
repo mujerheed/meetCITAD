@@ -270,7 +270,9 @@ CertificateTemplateSchema.index({ createdBy: 1 });
 
 // Virtual Properties
 CertificateTemplateSchema.virtual('availablePlaceholders').get(function () {
-  return this.dynamicFields.map(field => ({
+  const fields = Array.isArray(this.dynamicFields) ? this.dynamicFields : [];
+
+  return fields.map((field) => ({
     placeholder: `{{${field.fieldName}}}`,
     name: field.displayName,
   }));
@@ -300,8 +302,9 @@ CertificateTemplateSchema.methods.renderContent = function (data) {
 
 CertificateTemplateSchema.methods.validateRequiredFields = function (data) {
   const missingFields = [];
+  const fields = Array.isArray(this.dynamicFields) ? this.dynamicFields : [];
 
-  this.dynamicFields
+  fields
     .filter(field => field.required)
     .forEach(field => {
       if (!data[field.fieldName]) {

@@ -152,7 +152,7 @@
                         :key="index"
                         class="speaker-item"
                       >
-                        <v-avatar size="38" color="primary" class="text-white font-weight-bold">
+                        <v-avatar size="38" color="primary" class="text-on-primary font-weight-bold">
                           {{ initials(speaker.name) }}
                         </v-avatar>
                         <div>

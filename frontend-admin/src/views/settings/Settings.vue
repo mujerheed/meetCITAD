@@ -33,7 +33,7 @@
                 </div>
 
                 <div class="profile-row mb-5">
-                  <v-avatar size="72" color="primary" class="text-white font-weight-bold">
+                  <v-avatar size="72" color="primary" class="text-on-primary font-weight-bold">
                     <v-img v-if="profileForm.profileImage" :src="profileForm.profileImage" cover></v-img>
                     <template v-else>{{ auth.initials || 'A' }}</template>
                   </v-avatar>

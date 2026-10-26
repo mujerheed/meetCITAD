@@ -266,6 +266,10 @@ body {
   transition: height 0.2s ease;
 }
 
+.v-theme--dark .trend-bar {
+  background: rgba(157, 187, 221, 0.85);
+}
+
 .trend-bar--accent {
   background: #c9a44c;
 }

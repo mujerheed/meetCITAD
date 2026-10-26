@@ -1,12 +1,48 @@
 import PDFDocument from 'pdfkit';
 import fs from 'fs/promises';
-import { createWriteStream } from 'fs';
+import { createWriteStream, existsSync } from 'fs';
 import path from 'path';
 import { Certificate, CertificateTemplate, Event, User } from '../models/index.js';
 import qrService from './qr.service.js';
 import logger from '../utils/logger.js';
 import { AppError } from '../middleware/errorHandler.js';
 import config from '../config/index.js';
+import {
+  formatEventDateRange,
+  renderInstitutionalCertificate,
+  renderUploadedCertificate,
+} from './certificateLayout.service.js';
+
+/**
+ * Resolve a template background value to a local file PDFKit can embed.
+ * Uploaded designs live under /uploads/certificate-templates; legacy template
+ * assets may still use /templates.
+ */
+const resolveCertificateBackground = (value) => {
+  if (!value) return null;
+
+  const source = String(value);
+  if (/^https?:\/\//i.test(source)) return null;
+
+  let localPath;
+  if (source.startsWith('/uploads/')) {
+    localPath = path.join(
+      config.storage.uploadDir,
+      source.slice('/uploads/'.length)
+    );
+  } else if (source.startsWith('/templates/')) {
+    localPath = path.join(
+      config.storage.templateDir,
+      source.slice('/templates/'.length)
+    );
+  } else if (path.isAbsolute(source)) {
+    localPath = source;
+  } else {
+    localPath = path.join(config.storage.uploadDir, source);
+  }
+
+  return existsSync(localPath) ? localPath : null;
+};
 
 /**
  * Certificate Service
@@ -65,17 +101,55 @@ class CertificateService {
         // Create a sensible default template so certificate generation works
         // out of the box before admins design their own.
         template = await CertificateTemplate.create({
-          name: 'CITAD Certificate of Participation',
-          description: 'Default institutional certificate template',
-          type: 'participation',
+          name: 'CITAD Certificate of Attendance',
+          description:
+            'Official CITAD certificate with institutional frame, logos, and verification QR.',
+          type: 'attendance',
           isDefault: true,
+          design: {
+            backgroundColor: '#FFFFFF',
+            border: {
+              enabled: true,
+              color: '#0E4F8B',
+              width: 1.6,
+              style: 'solid',
+            },
+            fonts: {
+              heading: {
+                family: 'Times New Roman',
+                size: 34,
+                color: '#0E4F8B',
+                bold: true,
+              },
+              body: {
+                family: 'Times New Roman',
+                size: 14,
+                color: '#1F2937',
+              },
+              recipient: {
+                family: 'Great Vibes',
+                size: 40,
+                color: '#102A43',
+                bold: false,
+                italic: true,
+              },
+            },
+          },
           content: {
-            title: 'Certificate of Participation',
-            bodyText:
-              'This is to certify that {{recipientName}} participated in {{eventTitle}} held on {{eventDate}} at {{eventVenue}}.',
+            title: 'Certificate of Attendance',
+            bodyText: 'has attended {{eventTitle}} held at {{eventVenue}}.',
+            footerText:
+              'Centre for Information Technology and Development (CITAD), Kano, Nigeria',
           },
           signatures: [
-            { name: 'Director', title: 'Centre for Information Technology and Development' },
+            {
+              title: 'Training Facilitator, CITAD',
+              position: 'left',
+            },
+            {
+              title: 'Executive Director, CITAD',
+              position: 'right',
+            },
           ],
         });
       }
@@ -95,21 +169,30 @@ class CertificateService {
       certificate.certificateNumber = certificate.generateCertificateNumber();
       certificate.verificationHash = certificate.generateVerificationHash();
 
+      const eventDate = new Date(event.startDateTime);
+      const issuedDate = new Date();
+
       // Prepare certificate data (must include every required template field)
       const certificateData = {
         recipientName: user.fullname,
         eventTitle: event.title,
-        eventDate: event.startDateTime.toLocaleDateString('en-US', {
+        eventDate: eventDate.toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
+          timeZone: 'Africa/Lagos',
         }),
+        eventDateRange: formatEventDateRange(
+          event.startDateTime,
+          event.endDateTime
+        ),
         eventVenue: event.venue?.name || 'CITAD, Kano',
         certificateNumber: certificate.certificateNumber,
-        issuedDate: new Date().toLocaleDateString('en-US', {
+        issuedDate: issuedDate.toLocaleDateString('en-US', {
           year: 'numeric',
           month: 'long',
           day: 'numeric',
+          timeZone: 'Africa/Lagos',
         }),
       };
 
@@ -172,117 +255,46 @@ class CertificateService {
       try {
         const fileName = `${certificate.certificateNumber}.pdf`;
         const filePath = path.join(this.certificatesDir, fileName);
+        const backgroundImage = resolveCertificateBackground(
+          template.design?.backgroundImage
+        );
 
-        // Create PDF document
+        if (template.design?.backgroundImage && !backgroundImage) {
+          throw new AppError(
+            'The uploaded certificate design could not be found. Re-upload it from the template editor.',
+            400
+          );
+        }
+
         const doc = new PDFDocument({
           size: template.design.size === 'A4' ? 'A4' : 'LETTER',
           layout: template.design.orientation || 'landscape',
           margins: {
-            top: 50,
-            bottom: 50,
-            left: 50,
-            right: 50,
+            top: 0,
+            bottom: 0,
+            left: 0,
+            right: 0,
           },
         });
 
-        // Pipe to file
         const stream = createWriteStream(filePath);
         doc.pipe(stream);
 
-        // Set background color
-        if (template.design.backgroundColor) {
-          doc.rect(0, 0, doc.page.width, doc.page.height)
-            .fill(template.design.backgroundColor);
+        if (backgroundImage) {
+          renderUploadedCertificate(
+            doc,
+            certificate,
+            template,
+            data,
+            qrDataURL,
+            backgroundImage
+          );
+        } else {
+          renderInstitutionalCertificate(doc, certificate, template, data, qrDataURL);
         }
 
-        // Add border if enabled
-        if (template.design.border?.enabled) {
-          doc.rect(30, 30, doc.page.width - 60, doc.page.height - 60)
-            .lineWidth(template.design.border.width || 2)
-            .stroke(template.design.border.color || '#C9A661');
-        }
-
-        // Render template content
-        const content = template.renderContent(data);
-
-        // Add title
-        doc.fontSize(template.design.fonts.heading.size || 36)
-          .font('Helvetica-Bold')
-          .fillColor(template.design.fonts.heading.color || '#000000')
-          .text(content.title, 50, 100, {
-            align: 'center',
-            width: doc.page.width - 100,
-          });
-
-        // Add recipient name
-        doc.fontSize(template.design.fonts.recipient.size || 28)
-          .font('Times-Italic')
-          .fillColor(template.design.fonts.recipient.color || '#000000')
-          .text(data.recipientName, 50, 200, {
-            align: 'center',
-            width: doc.page.width - 100,
-          });
-
-        // Add body text
-        doc.fontSize(template.design.fonts.body.size || 14)
-          .font('Helvetica')
-          .fillColor(template.design.fonts.body.color || '#333333')
-          .text(content.body, 50, 280, {
-            align: 'center',
-            width: doc.page.width - 100,
-          });
-
-        // Add certificate number
-        doc.fontSize(10)
-          .fillColor('#666666')
-          .text(`Certificate No: ${certificate.certificateNumber}`, 50, doc.page.height - 120, {
-            align: 'center',
-            width: doc.page.width - 100,
-          });
-
-        // Add QR code
-        if (qrDataURL) {
-          // Convert data URL to buffer
-          const qrBuffer = Buffer.from(qrDataURL.split(',')[1], 'base64');
-          doc.image(qrBuffer, doc.page.width - 150, doc.page.height - 150, {
-            width: 100,
-            height: 100,
-          });
-        }
-
-        // Add signatures if available
-        if (template.signatures && template.signatures.length > 0) {
-          const signatureY = doc.page.height - 180;
-          const spacing = (doc.page.width - 100) / template.signatures.length;
-
-          template.signatures.forEach((signature, index) => {
-            const x = 50 + (index * spacing);
-            
-            // Add signature line
-            doc.moveTo(x, signatureY)
-              .lineTo(x + 150, signatureY)
-              .stroke('#000000');
-
-            // Add signature name and title
-            doc.fontSize(10)
-              .fillColor('#000000')
-              .text(signature.name, x, signatureY + 10, {
-                width: 150,
-                align: 'center',
-              })
-              .fontSize(8)
-              .fillColor('#666666')
-              .text(signature.title, x, signatureY + 25, {
-                width: 150,
-                align: 'center',
-              });
-          });
-        }
-
-        // Finalize PDF
         doc.end();
 
-        // Wait for file to be written
         stream.on('finish', () => {
           resolve(`/certificates/${fileName}`);
         });
@@ -490,9 +502,11 @@ class CertificateService {
    */
   async deleteCertificateFile(filePath) {
     try {
-      const resolved = filePath?.startsWith('/certificates/')
-        ? path.join(this.certificatesDir, path.basename(filePath))
-        : filePath;
+      if (!filePath) return false;
+
+      const resolved = path.isAbsolute(filePath)
+        ? filePath
+        : path.join(this.certificatesDir, path.basename(filePath));
 
       await fs.unlink(resolved);
       logger.info(`Deleted certificate file: ${resolved}`);

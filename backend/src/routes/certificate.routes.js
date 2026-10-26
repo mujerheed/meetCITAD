@@ -35,6 +35,20 @@ router.post(
 router.get('/templates', ...adminOnly, certificateController.getTemplates.bind(certificateController));
 router.get('/templates/:id', ...adminOnly, certificateController.getTemplate.bind(certificateController));
 router.put('/templates/:id', ...adminOnly, certificateController.updateTemplate.bind(certificateController));
+router.post(
+  '/templates/:id/background',
+  ...adminOnly,
+  uploadLimiter,
+  uploadCertificateTemplate,
+  processCertificateTemplate,
+  handleMulterError,
+  certificateController.uploadTemplateBackground.bind(certificateController)
+);
+router.delete(
+  '/templates/:id/background',
+  ...adminOnly,
+  certificateController.removeTemplateBackground.bind(certificateController)
+);
 router.delete('/templates/:id', ...adminOnly, certificateController.deleteTemplate.bind(certificateController));
 
 // Generation (admin)

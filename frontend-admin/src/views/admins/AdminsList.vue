@@ -55,7 +55,7 @@
             <tr v-for="admin in admins" :key="admin._id">
               <td style="min-width: 210px">
                 <div class="d-flex align-center ga-3">
-                  <v-avatar size="36" color="primary" class="text-white font-weight-bold">
+                  <v-avatar size="36" color="primary" class="text-on-primary font-weight-bold">
                     {{ initials(admin.fullname) }}
                   </v-avatar>
                   <div>
@@ -178,14 +178,13 @@
 
             <v-row dense>
               <v-col cols="12" sm="6">
-                <v-select
+                <NativeSelect
                   v-model="editor.form.role"
                   :items="roleOptions"
                   label="Role"
-                  variant="outlined"
                   :disabled="editor.id && !auth.isSuperAdmin"
                   @update:model-value="onRoleChange"
-                ></v-select>
+                />
               </v-col>
               <v-col cols="12" sm="6">
                 <v-text-field
@@ -196,14 +195,13 @@
               </v-col>
             </v-row>
 
-            <v-select
+            <NativeSelect
               v-if="editor.id"
               v-model="editor.form.status"
               :items="statusOptions"
               label="Account status"
-              variant="outlined"
               class="mb-2"
-            ></v-select>
+            />
 
             <div class="form-section-title mt-2">Permissions</div>
             <div class="form-section-caption">
@@ -267,6 +265,7 @@ import { useSnackbar } from '@/composables/useSnackbar'
 import PageHeader from '@/components/PageHeader.vue'
 import StatusChip from '@/components/StatusChip.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import NativeSelect from '@/components/NativeSelect.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { formatDate } from '@/utils/formatters'
 

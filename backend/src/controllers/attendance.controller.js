@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { User, Event } from '../models/index.js';
 import { qrService } from '../services/index.js';
 import logger from '../utils/logger.js';
@@ -42,6 +43,31 @@ const syncUserAttendance = async (user, eventId, attended, checkInTime = null) =
   user.stats.totalEventsAttended = attendedCount;
 
   await user.save();
+};
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_PATTERN = /^[0-9]{10,15}$/;
+
+const normalizePhone = (value) =>
+  value ? String(value).replace(/[\s\-()]/g, '') : undefined;
+
+const buildWalkInUsername = (email) => {
+  const base = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 20) || 'walkin';
+
+  return `${base}_${crypto.randomBytes(3).toString('hex')}`;
+};
+
+const syncUserRegistrationStats = (user) => {
+  const registrations = user.registeredEvents || [];
+  user.stats.totalEventsRegistered = registrations.length;
+  user.stats.totalEventsAttended = registrations.filter(
+    (registration) => registration.attended
+  ).length;
 };
 
 class AttendanceController {
@@ -208,6 +234,199 @@ class AttendanceController {
             title: event.title,
           },
           checkInTime,
+        },
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Add Attendee / Walk-in
+   * POST /api/v1/attendance/add-attendee
+   *
+   * Registers an attendee who did not use the participant app. Existing
+   * accounts are matched by email; otherwise a lightweight participant record
+   * is created with registrationSource set to "admin".
+   */
+  async addAttendee(req, res, next) {
+    try {
+      const {
+        eventId,
+        fullname,
+        email,
+        phone,
+        organisation,
+        checkInNow = true,
+      } = req.body || {};
+
+      const cleanName = String(fullname || '').trim();
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanPhone = normalizePhone(phone);
+      const cleanOrganisation = String(organisation || '').trim();
+      const shouldCheckIn = checkInNow !== false;
+
+      if (!eventId) {
+        throw new AppError('Event ID is required', 400);
+      }
+
+      if (cleanName.length < 3) {
+        throw new AppError('Attendee full name must be at least 3 characters', 400);
+      }
+
+      if (!EMAIL_PATTERN.test(cleanEmail)) {
+        throw new AppError('A valid attendee email address is required', 400);
+      }
+
+      if (cleanPhone && !PHONE_PATTERN.test(cleanPhone)) {
+        throw new AppError('Please provide a valid phone number', 400);
+      }
+
+      const event = await Event.findById(eventId);
+      if (!event) {
+        throw new AppError('Event not found', 404);
+      }
+
+      if (['draft', 'cancelled'].includes(event.status)) {
+        throw new AppError('Attendance cannot be recorded for this event', 400);
+      }
+
+      let user = await User.findOne({ email: cleanEmail });
+      let createdUser = false;
+
+      if (user && user.status !== 'active') {
+        throw new AppError(
+          'A participant account with this email is not active. Contact an administrator.',
+          400
+        );
+      }
+
+      if (!user) {
+        user = new User({
+          fullname: cleanName,
+          email: cleanEmail,
+          phone: cleanPhone,
+          organisation: cleanOrganisation || undefined,
+          username: buildWalkInUsername(cleanEmail),
+          // Walk-ins have no participant password. A random secret keeps the
+          // account non-loginable until the owner uses the reset flow.
+          password: crypto.randomBytes(32).toString('hex'),
+          emailVerified: false,
+          registrationSource: 'admin',
+        });
+        await user.save();
+        createdUser = true;
+      } else {
+        if (cleanPhone && !user.phone) user.phone = cleanPhone;
+        if (cleanOrganisation && !user.organisation) {
+          user.organisation = cleanOrganisation;
+        }
+      }
+
+      const now = new Date();
+      const userId = user._id.toString();
+      let registration = event.registeredUsers.find(
+        (item) => toId(item.userId) === userId
+      );
+
+      const alreadyRegistered = Boolean(
+        registration && registration.status !== 'cancelled'
+      );
+
+      if (registration && registration.status !== 'confirmed') {
+        registration.status = 'confirmed';
+        registration.registeredAt = now;
+      } else if (!registration) {
+        event.registeredUsers.push({
+          userId: user._id,
+          registeredAt: now,
+          status: 'confirmed',
+        });
+        registration = event.registeredUsers[event.registeredUsers.length - 1];
+      }
+
+      const confirmedBefore = event.registeredUsers.filter(
+        (item) => item.status === 'confirmed'
+      ).length;
+      const overCapacity = Boolean(
+        event.capacity && confirmedBefore > event.capacity
+      );
+
+      const attendance = getAttendance(event, user._id);
+      const alreadyCheckedIn = Boolean(attendance);
+
+      if (shouldCheckIn && !attendance) {
+        event.attendedUsers.push({
+          userId: user._id,
+          checkInTime: now,
+          checkInMethod: 'manual',
+          checkInBy: req.user.id,
+        });
+      }
+
+      event.registrationCount = event.registeredUsers.filter(
+        (item) => item.status === 'confirmed'
+      ).length;
+      event.attendanceCount = event.attendedUsers.length;
+      await event.save();
+
+      let mirror = (user.registeredEvents || []).find(
+        (item) => toId(item.eventId) === event._id.toString()
+      );
+
+      if (!mirror) {
+        user.registeredEvents.push({
+          eventId: event._id,
+          registeredAt: now,
+          status: 'confirmed',
+          attended: false,
+          certificateIssued: false,
+        });
+        mirror = user.registeredEvents[user.registeredEvents.length - 1];
+      } else if (mirror.status !== 'confirmed') {
+        mirror.status = 'confirmed';
+        mirror.registeredAt = now;
+      }
+
+      if (shouldCheckIn) {
+        mirror.attended = true;
+        mirror.attendedAt = mirror.attendedAt || now;
+        mirror.checkInTime = mirror.checkInTime || now;
+      }
+
+      syncUserRegistrationStats(user);
+      await user.save();
+
+      logger.info(
+        `Walk-in attendee ${user.email} ${
+          shouldCheckIn ? 'checked in' : 'registered'
+        } for event: ${event.title} by admin ${req.user.id}`
+      );
+
+      res.status(createdUser ? 201 : 200).json({
+        success: true,
+        message: shouldCheckIn
+          ? 'Attendee added and checked in successfully'
+          : 'Attendee added successfully',
+        data: {
+          attendee: {
+            userId: user._id,
+            fullname: user.fullname,
+            email: user.email,
+            phone: user.phone,
+            organisation: user.organisation,
+            registeredAt: registration?.registeredAt || now,
+            status: registration?.status || 'confirmed',
+            attended: shouldCheckIn || alreadyCheckedIn,
+            checkInTime: shouldCheckIn
+              ? attendance?.checkInTime || now
+              : attendance?.checkInTime || null,
+            checkInMethod: shouldCheckIn ? 'manual' : attendance?.checkInMethod || null,
+          },
+          createdUser,
+          alreadyRegistered,
+          alreadyCheckedIn,
+          overCapacity,
         },
       });
     } catch (error) {

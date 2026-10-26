@@ -45,6 +45,16 @@ export function cacheRemove(key) {
   }
 }
 
+export function cacheClear() {
+  try {
+    Object.keys(localStorage)
+      .filter((key) => key.startsWith(PREFIX))
+      .forEach((key) => localStorage.removeItem(key))
+  } catch {
+    // Storage may be unavailable; session cleanup must still complete.
+  }
+}
+
 export function isOnline() {
   return typeof navigator === 'undefined' ? true : navigator.onLine
 }

@@ -334,16 +334,19 @@
     <!-- Login Modal -->
     <v-dialog v-model="showLoginModal" max-width="500">
       <v-card>
-        <v-card-title class="text-h6">Sign in to register</v-card-title>
+        <v-card-title class="text-h6">Sign in or create an account</v-card-title>
         <v-card-text>
-          <p class="text-body-2 mb-4">
-            You need to be signed in to register for events. Please sign in or create an account to continue.
+          <p class="text-body-2 mb-2">
+            To register for this event, sign in to your participant account or create a new one.
           </p>
         </v-card-text>
         <v-card-actions>
-          <v-spacer></v-spacer>
           <v-btn color="primary" variant="text" @click="showLoginModal = false">
             Cancel
+          </v-btn>
+          <v-spacer></v-spacer>
+          <v-btn variant="outlined" color="primary" @click="goToSignup">
+            Create Account
           </v-btn>
           <v-btn color="accent" variant="flat" @click="goToLogin">
             Sign In
@@ -529,6 +532,14 @@ const goToLogin = () => {
   showLoginModal.value = false
   router.push({
     name: 'Login',
+    query: { redirect: route.fullPath }
+  })
+}
+
+const goToSignup = () => {
+  showLoginModal.value = false
+  router.push({
+    name: 'Signup',
     query: { redirect: route.fullPath }
   })
 }

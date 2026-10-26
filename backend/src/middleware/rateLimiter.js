@@ -200,6 +200,16 @@ export const exportLimiter = createRateLimiter({
 });
 
 /**
+ * Weekly Personal Task Rate Limiter
+ * Tasks are lightweight but should not be used as an unbounded write channel.
+ */
+export const weeklyTaskLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 120,
+  message: 'Too many weekly task changes, please try again later.',
+});
+
+/**
  * Custom Rate Limiter Creator
  * Allows creating custom rate limiters on the fly
  */
@@ -297,6 +307,7 @@ export default {
   uploadLimiter,
   adminLimiter,
   exportLimiter,
+  weeklyTaskLimiter,
   createCustomLimiter,
   skipRateLimitIf,
   skipForAdmins,

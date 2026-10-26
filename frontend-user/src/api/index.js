@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { cacheClear } from '@/utils/offline'
 import {
   normalizeCertificate,
   normalizeEvent,
@@ -76,6 +77,7 @@ api.interceptors.response.use(
     if (status === 401 && token) {
       localStorage.removeItem('token')
       localStorage.removeItem('user')
+      cacheClear()
 
       const currentPath = window.location.pathname
       const isAuthPage = AUTH_FREE_PATHS.some((path) => currentPath.startsWith(path))
@@ -174,30 +176,50 @@ async function enrichRegisteredEvents(entries) {
   }
 }
 
-function normalizeCertificateList(data = {}) {  const rawCertificates = Array.isArray(data)
+function normalizeCertificateList(data = {}) {
+  const rawCertificates = Array.isArray(data)
     ? data
     : data.certificates || data.docs || data.results || []
 
-  return rawCertificates
-    .map((certificate) => {
-      // Fallback shape: a registeredEvent record flagged as certificateIssued.
-      if (certificate.event || certificate.eventId) {
-        const event = certificate.event || certificate.eventId
-        return normalizeCertificate({
-          _id: event?._id || event,
-          eventTitle: event?.title,
-          eventDate: event?.date || event?.startDate,
-          certificateNumber: certificate.certificateNumber,
-          status: 'active',
-        })
-      }
-      return normalizeCertificate(certificate)
-    })
-    .filter(Boolean)
+  // Both certificate endpoints return certificate records, not registrations.
+  // Keep the certificate ID even when its event reference is populated.
+  return rawCertificates.map(normalizeCertificate).filter(Boolean)
+}
+
+function calendarFilenameFromDisposition(disposition = '', fallback) {
+  const match = String(disposition).match(
+    /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i
+  )
+  return match ? decodeURIComponent(match[1]) : fallback
 }
 
 const getApiMessage = (response, fallback) =>
   response?.data?.message || response?.data?.data?.message || fallback
+
+async function changePasswordRequest(currentPassword, newPassword, confirmPassword) {
+  // The API validates both a strong password and an explicit confirmation.
+  const response = await api.post('/auth/change-password', {
+    currentPassword,
+    newPassword,
+    newPasswordConfirm: confirmPassword ?? newPassword,
+  })
+  return { ...unwrap(response), message: getApiMessage(response) }
+}
+
+async function fetchUserCertificates(userId) {
+  // The certificate module is the source of truth when available.
+  if (userId) {
+    try {
+      const response = await api.get(`/certificates/user/${userId}`)
+      return normalizeCertificateList(unwrap(response))
+    } catch (error) {
+      if (error.response?.status === 401) throw error
+    }
+  }
+
+  const response = await api.get('/users/certificates')
+  return normalizeCertificateList(unwrap(response))
+}
 
 export default {
   // ---------------------------------------------------------------- Auth
@@ -229,15 +251,7 @@ export default {
       })
       return { ...unwrap(response), message: getApiMessage(response) }
     },
-    changePassword: async (currentPassword, newPassword, confirmPassword) => {
-      // The API validates both a strong password and an explicit confirmation.
-      const response = await api.post('/auth/change-password', {
-        currentPassword,
-        newPassword,
-        newPasswordConfirm: confirmPassword ?? newPassword,
-      })
-      return { ...unwrap(response), message: getApiMessage(response) }
-    },
+    changePassword: changePasswordRequest,
     me: async () => {
       const response = await api.get('/auth/me')
       return unwrap(response)?.user
@@ -256,7 +270,7 @@ export default {
       return { ...unwrap(response), message: getApiMessage(response) }
     },
     changePassword: (data) =>
-      api.auth.changePassword(
+      changePasswordRequest(
         data.currentPassword,
         data.newPassword,
         data.confirmPassword
@@ -287,20 +301,7 @@ export default {
       const response = await api.get(`/users/events/${eventId}/status`)
       return unwrap(response)
     },
-    getCertificates: async (userId) => {
-      // The certificate module is the source of truth when available.
-      if (userId) {
-        try {
-          const response = await api.get(`/certificates/user/${userId}`)
-          return normalizeCertificateList(unwrap(response))
-        } catch (error) {
-          if (error.response?.status === 401) throw error
-        }
-      }
-
-      const response = await api.get('/users/certificates')
-      return normalizeCertificateList(unwrap(response))
-    },
+    getCertificates: fetchUserCertificates,
     getStatistics: async () => {
       const response = await api.get('/users/statistics')
       return unwrap(response)?.statistics || {}
@@ -347,9 +348,70 @@ export default {
     },
   },
 
+  // ----------------------------------------------------- Weekly programs
+  weekly: {
+    getWeek: async (weekStart) => {
+      const response = await api.get('/weekly', {
+        params: weekStart ? { weekStart } : {},
+      })
+      return unwrap(response) || {}
+    },
+    getCurrentWeek: async () => {
+      const response = await api.get('/weekly/current')
+      return unwrap(response) || {}
+    },
+    getActivity: async (id) => {
+      const response = await api.get(`/weekly/activities/${id}`)
+      return unwrap(response) || {}
+    },
+    downloadActivityCalendar: async (id) => {
+      const response = await api.get(`/weekly/activities/${id}/calendar.ics`, {
+        responseType: 'blob',
+      })
+      return {
+        blob: response.data,
+        filename: calendarFilenameFromDisposition(
+          response.headers?.['content-disposition'],
+          'citad-activity.ics'
+        ),
+      }
+    },
+    downloadWeekCalendar: async (weekStart) => {
+      const response = await api.get('/weekly/calendar.ics', {
+        params: weekStart ? { weekStart } : {},
+        responseType: 'blob',
+      })
+      return {
+        blob: response.data,
+        filename: calendarFilenameFromDisposition(
+          response.headers?.['content-disposition'],
+          'citad-weekly.ics'
+        ),
+      }
+    },
+    getTasks: async (weekStart) => {
+      const response = await api.get('/weekly/tasks', {
+        params: weekStart ? { weekStart } : {},
+      })
+      return unwrap(response) || {}
+    },
+    createTask: async (payload) => {
+      const response = await api.post('/weekly/tasks', payload)
+      return unwrap(response)?.task || null
+    },
+    updateTask: async (id, payload) => {
+      const response = await api.patch(`/weekly/tasks/${id}`, payload)
+      return unwrap(response)?.task || null
+    },
+    deleteTask: async (id) => {
+      const response = await api.delete(`/weekly/tasks/${id}`)
+      return unwrap(response) || {}
+    },
+  },
+
   // -------------------------------------------------------- Certificates
   certificates: {
-    getMyCertificates: (userId) => api.user.getCertificates(userId),
+    getMyCertificates: (userId) => fetchUserCertificates(userId),
     download: async (id) => {
       const response = await api.get(`/certificates/${id}/download`, {
         responseType: 'blob',

@@ -26,6 +26,12 @@ const routes = [
         meta: { title: 'Events', icon: 'mdi-calendar-text-outline' },
       },
       {
+        path: 'weekly',
+        name: 'WeeklyPrograms',
+        component: () => import('@/views/weekly/WeeklyPrograms.vue'),
+        meta: { title: 'Weekly Programs', icon: 'mdi-calendar-week-outline' },
+      },
+      {
         path: 'events/new',
         name: 'EventCreate',
         component: () => import('@/views/events/EventForm.vue'),

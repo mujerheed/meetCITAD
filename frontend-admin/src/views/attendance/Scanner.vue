@@ -169,7 +169,7 @@
               </v-alert>
 
               <div v-if="result.user" class="result-person">
-                <v-avatar size="46" color="primary" class="text-white font-weight-bold">
+                <v-avatar size="46" color="primary" class="text-on-primary font-weight-bold">
                   {{ initials(result.user.fullname) }}
                 </v-avatar>
                 <div>

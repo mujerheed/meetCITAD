@@ -58,7 +58,7 @@
                     variant="text"
                     color="error"
                     size="small"
-                    :to="{ name: 'VerifyEmail', query: { email: form.email } }"
+                    :to="verifyLink"
                   >
                     Verify your email
                   </v-btn>
@@ -85,7 +85,7 @@
                 </v-col>
                 <v-col cols="12" class="text-center">
                   Don't have an account?
-                  <router-link to="/signup" class="text-decoration-none">
+                  <router-link :to="signupLink" class="text-decoration-none">
                     Sign Up
                   </router-link>
                 </v-col>
@@ -121,6 +121,19 @@ const error = computed(() => authStore.error)
 const needsVerification = computed(() =>
   /verif/i.test(error.value || '')
 )
+
+const signupLink = computed(() => ({
+  name: 'Signup',
+  query: route.query.redirect ? { redirect: route.query.redirect } : {},
+}))
+
+const verifyLink = computed(() => ({
+  name: 'VerifyEmail',
+  query: {
+    email: form.value.email,
+    ...(route.query.redirect ? { redirect: route.query.redirect } : {}),
+  },
+}))
 
 const emailRules = [
   v => !!v || 'Email is required',

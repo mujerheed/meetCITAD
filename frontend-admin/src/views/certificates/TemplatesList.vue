@@ -34,17 +34,27 @@
         <v-card class="admin-card template-card" elevation="0">
           <div
             class="template-preview"
+            :class="{ 'has-uploaded-design': Boolean(template.design?.backgroundImage) }"
             :style="{
               backgroundColor: template.design?.backgroundColor || '#FFFFFF',
-              borderColor: template.design?.border?.color || '#C9A44C',
+              borderColor: template.design?.border?.color || '#0E4F8B',
+              backgroundImage: template.design?.backgroundImage
+                ? `url('${resolveMediaUrl(template.design.backgroundImage)}')`
+                : undefined,
             }"
           >
-            <div class="preview-title">{{ template.content?.title || 'Certificate of Attendance' }}</div>
-            <div class="preview-name">Aisha Abdullahi</div>
-            <div class="preview-copy">
-              has successfully attended a CITAD event.
-            </div>
-            <div class="preview-footer">CITAD · Kano, Nigeria</div>
+            <template v-if="template.design?.backgroundImage">
+              <span class="uploaded-design-label">Uploaded design</span>
+            </template>
+            <template v-else>
+              <img :src="citadLogo" alt="CITAD" class="preview-logo" />
+              <div class="preview-title">{{ template.content?.title || 'Certificate of Attendance' }}</div>
+              <div class="preview-name">Aisha Abdullahi</div>
+              <div class="preview-copy">
+                has successfully attended a CITAD event.
+              </div>
+              <div class="preview-footer">CITAD · Kano, Nigeria</div>
+            </template>
           </div>
 
           <v-card-text class="pa-4">
@@ -113,13 +123,12 @@
               ></v-text-field>
             </v-col>
             <v-col cols="12" md="5">
-              <v-select
+              <NativeSelect
                 v-model="editor.form.type"
                 :items="typeOptions"
                 label="Certificate type"
-                variant="outlined"
                 class="mb-2"
-              ></v-select>
+              />
             </v-col>
           </v-row>
 
@@ -136,20 +145,18 @@
 
           <v-row dense class="mb-4">
             <v-col cols="12" sm="4">
-              <v-select
+              <NativeSelect
                 v-model="editor.form.design.orientation"
                 :items="orientationOptions"
                 label="Orientation"
-                variant="outlined"
-              ></v-select>
+              />
             </v-col>
             <v-col cols="12" sm="4">
-              <v-select
+              <NativeSelect
                 v-model="editor.form.design.size"
                 :items="sizeOptions"
                 label="Paper size"
-                variant="outlined"
-              ></v-select>
+              />
             </v-col>
             <v-col cols="12" sm="4">
               <v-text-field
@@ -190,14 +197,92 @@
             </v-col>
           </v-row>
 
-          <v-text-field
-            v-model="editor.form.design.backgroundImage"
-            label="Background image URL (optional)"
+          <div class="form-section-title">Uploaded certificate design</div>
+          <div class="form-section-caption mb-3">
+            Upload an already-designed CITAD certificate. It becomes the full-page
+            background, and the recipient name, event statement, certificate number,
+            and verification QR are placed on top. A4 landscape PNG, JPG, or WebP is
+            recommended.
+          </div>
+
+          <v-file-input
+            v-model="editor.file"
+            label="Certificate design image"
+            accept="image/png,image/jpeg,image/webp"
+            prepend-icon="mdi-upload"
             variant="outlined"
-            hint="Use a hosted image URL. Leave blank for a plain background."
+            density="comfortable"
+            :rules="[designFileRule]"
+            hint="PNG, JPG, or WebP up to 10 MB."
             persistent-hint
-            class="mb-5"
-          ></v-text-field>
+            class="mb-3"
+            @update:model-value="onDesignFileChange"
+          ></v-file-input>
+
+          <div v-if="editor.previewUrl" class="design-preview-card mb-4">
+            <v-img
+              :src="editor.previewUrl"
+              alt="Uploaded certificate design preview"
+              max-height="260"
+              contain
+              class="design-preview-image"
+            ></v-img>
+            <div class="design-preview-meta">
+              <span class="text-caption text-medium-emphasis">
+                {{ editor.file ? 'New design selected — save to apply.' : 'Current uploaded design.' }}
+              </span>
+              <v-btn
+                variant="text"
+                color="error"
+                size="small"
+                :loading="editor.removing"
+                @click="removeDesign"
+              >
+                {{ editor.file ? 'Clear selection' : 'Remove design' }}
+              </v-btn>
+            </div>
+          </div>
+
+          <template v-if="editor.previewUrl">
+            <div class="form-section-title">Uploaded design fields</div>
+            <div class="form-section-caption mb-3">
+              Adjust where the overlaid text and QR appear. Positions are measured
+              from the top of the page in millimetres.
+            </div>
+
+            <v-row dense class="mb-4">
+              <v-col cols="12" sm="4">
+                <v-text-field
+                  v-model.number="editor.form.design.layout.recipientName.y"
+                  label="Recipient name position (mm)"
+                  type="number"
+                  min="20"
+                  max="190"
+                  variant="outlined"
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12" sm="4">
+                <v-text-field
+                  v-model.number="editor.form.design.layout.body.y"
+                  label="Statement position (mm)"
+                  type="number"
+                  min="30"
+                  max="195"
+                  variant="outlined"
+                ></v-text-field>
+              </v-col>
+              <v-col cols="12" sm="4">
+                <v-text-field
+                  v-model.number="editor.form.design.layout.qrCode.size"
+                  label="QR code size (mm)"
+                  type="number"
+                  min="10"
+                  max="35"
+                  variant="outlined"
+                ></v-text-field>
+              </v-col>
+            </v-row>
+          </template>
 
           <div class="form-section-title">Certificate wording</div>
           <div class="form-section-caption mb-3">Placeholders are replaced when each certificate is generated.</div>
@@ -235,7 +320,7 @@
             hide-details
           ></v-switch>
           <v-spacer></v-spacer>
-          <v-btn variant="text" :disabled="editor.saving" @click="editor.show = false">Cancel</v-btn>
+          <v-btn variant="text" :disabled="editor.saving" @click="closeEditor">Cancel</v-btn>
           <v-btn color="primary" variant="flat" :loading="editor.saving" @click="saveTemplate">
             {{ editor.id ? 'Save Changes' : 'Create Template' }}
           </v-btn>
@@ -258,12 +343,15 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import api, { getErrorMessage } from '@/api'
 import { useSnackbar } from '@/composables/useSnackbar'
 import PageHeader from '@/components/PageHeader.vue'
 import EmptyState from '@/components/EmptyState.vue'
+import NativeSelect from '@/components/NativeSelect.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import { resolveMediaUrl } from '@/utils/normalizers'
+import citadLogo from '@/assets/images/citad-logo-transparent.png'
 
 const { notifySuccess, notifyError } = useSnackbar()
 
@@ -299,16 +387,21 @@ const blankForm = () => ({
     backgroundImage: '',
     border: {
       enabled: true,
-      color: '#C9A44C',
-      width: 2,
+      color: '#0E4F8B',
+      width: 1.6,
       style: 'solid',
+    },
+    layout: {
+      recipientName: { y: 92 },
+      body: { y: 122 },
+      qrCode: { size: 16 },
     },
   },
   content: {
     title: 'Certificate of Attendance',
-    bodyText:
-      'This is to certify that {{recipientName}} has successfully attended {{eventTitle}} held on {{eventDate}} at {{eventVenue}}.',
-    footerText: 'Centre for Information Technology and Development (CITAD)',
+    bodyText: 'has attended {{eventTitle}} held at {{eventVenue}}.',
+    footerText:
+      'Centre for Information Technology and Development (CITAD), Kano, Nigeria',
   },
 })
 
@@ -317,6 +410,11 @@ const editor = reactive({
   id: null,
   original: null,
   saving: false,
+  file: null,
+  previewUrl: '',
+  savedBackground: '',
+  objectUrl: '',
+  removing: false,
   form: blankForm(),
 })
 
@@ -335,14 +433,64 @@ const load = async () => {
   }
 }
 
+const revokeObjectUrl = () => {
+  if (editor.objectUrl) {
+    URL.revokeObjectURL(editor.objectUrl)
+    editor.objectUrl = ''
+  }
+}
+
+const resetDesignState = (background = '') => {
+  revokeObjectUrl()
+  editor.file = null
+  editor.savedBackground = background || ''
+  editor.previewUrl = background ? resolveMediaUrl(background) : ''
+}
+
+const supportedDesignTypes = ['image/png', 'image/jpeg', 'image/webp']
+
+const designFileRule = (value) => {
+  const file = Array.isArray(value) ? value[0] : value
+  if (!file) return true
+  if (!supportedDesignTypes.includes(file.type)) {
+    return 'Upload a PNG, JPG, or WebP image.'
+  }
+  if (file.size > 10 * 1024 * 1024) {
+    return 'The design must be 10 MB or smaller.'
+  }
+  return true
+}
+
+const onDesignFileChange = (value) => {
+  const file = Array.isArray(value) ? value[0] : value
+  revokeObjectUrl()
+
+  const validation = designFileRule(file)
+  if (!file || validation !== true) {
+    if (validation !== true) notifyError(validation)
+    editor.file = null
+    editor.previewUrl = editor.savedBackground
+      ? resolveMediaUrl(editor.savedBackground)
+      : ''
+    return
+  }
+
+  editor.file = file
+  editor.objectUrl = URL.createObjectURL(file)
+  editor.previewUrl = editor.objectUrl
+}
+
 const openCreate = () => {
   editor.id = null
   editor.original = null
   editor.form = blankForm()
+  resetDesignState('')
   editor.show = true
 }
 
 const openEdit = (template) => {
+  const savedLayout = template.design?.layout || {}
+
   editor.id = template._id
   editor.original = template
   editor.form = {
@@ -358,9 +506,24 @@ const openEdit = (template) => {
       backgroundImage: template.design?.backgroundImage || '',
       border: {
         enabled: template.design?.border?.enabled !== false,
-        color: template.design?.border?.color || '#C9A44C',
-        width: template.design?.border?.width ?? 2,
+        color: template.design?.border?.color || '#0E4F8B',
+        width: template.design?.border?.width ?? 1.6,
         style: template.design?.border?.style || 'solid',
+      },
+      layout: {
+        ...savedLayout,
+        recipientName: {
+          ...(savedLayout.recipientName || {}),
+          y: savedLayout.recipientName?.y ?? 92,
+        },
+        body: {
+          ...(savedLayout.body || {}),
+          y: savedLayout.body?.y ?? 122,
+        },
+        qrCode: {
+          ...(savedLayout.qrCode || {}),
+          size: savedLayout.qrCode?.size ?? 16,
+        },
       },
     },
     content: {
@@ -370,6 +533,7 @@ const openEdit = (template) => {
       footerText: template.content?.footerText || '',
     },
   }
+  resetDesignState(template.design?.backgroundImage || '')
   editor.show = true
 }
 
@@ -403,21 +567,80 @@ const saveTemplate = async () => {
       },
     }
 
+    let saved
     if (editor.id) {
-      await api.certificates.updateTemplate(editor.id, payload)
-      notifySuccess('Template updated.')
+      saved = await api.certificates.updateTemplate(editor.id, payload)
     } else {
-      await api.certificates.createTemplate(payload)
-      notifySuccess('Template created.')
+      saved = await api.certificates.createTemplate(payload)
     }
 
+    if (editor.file && saved?._id) {
+      try {
+        saved = await api.certificates.uploadTemplateBackground(saved._id, editor.file)
+      } catch (uploadError) {
+        editor.id = saved._id
+        editor.savedBackground = saved.design?.backgroundImage || editor.savedBackground
+        await load()
+        notifyError(
+          getErrorMessage(
+            uploadError,
+            'Template details were saved, but the design upload failed. Try saving again.'
+          )
+        )
+        return
+      }
+    }
+
+    notifySuccess(
+      editor.file
+        ? editor.id
+          ? 'Template and uploaded design updated.'
+          : 'Template created with uploaded design.'
+        : editor.id
+          ? 'Template updated.'
+          : 'Template created.'
+    )
+
     editor.show = false
+    resetDesignState('')
     await load()
   } catch (err) {
     notifyError(getErrorMessage(err, 'Could not save the template.'))
   } finally {
     editor.saving = false
   }
+}
+
+const removeDesign = async () => {
+  // Clearing an unsaved replacement must not delete the previously saved design.
+  if (editor.file) {
+    resetDesignState(editor.savedBackground)
+    return
+  }
+
+  if (!editor.id) {
+    editor.form.design.backgroundImage = ''
+    resetDesignState('')
+    return
+  }
+
+  editor.removing = true
+  try {
+    await api.certificates.removeTemplateBackground(editor.id)
+    editor.form.design.backgroundImage = ''
+    resetDesignState('')
+    notifySuccess('Uploaded certificate design removed.')
+    await load()
+  } catch (err) {
+    notifyError(getErrorMessage(err, 'Could not remove the uploaded design.'))
+  } finally {
+    editor.removing = false
+  }
+}
+
+const closeEditor = () => {
+  editor.show = false
+  resetDesignState('')
 }
 
 const toggleActive = async (template, value) => {
@@ -454,6 +677,7 @@ const confirmDelete = async () => {
 }
 
 onMounted(load)
+onBeforeUnmount(revokeObjectUrl)
 </script>
 
 <style scoped>
@@ -464,7 +688,8 @@ onMounted(load)
 }
 
 .template-preview {
-  border: 3px solid #c9a44c;
+  position: relative;
+  border: 3px solid #0e4f8b;
   border-radius: 2px;
   padding: 16px;
   margin: 16px;
@@ -476,6 +701,80 @@ onMounted(load)
   text-align: center;
   color: #0f2a44;
   overflow: hidden;
+}
+
+.template-preview::before {
+  content: 'CITAD';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Georgia, serif;
+  font-size: 4.2rem;
+  font-weight: 700;
+  color: rgba(14, 79, 139, 0.06);
+  pointer-events: none;
+}
+
+.template-preview.has-uploaded-design {
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.template-preview.has-uploaded-design::before {
+  content: '';
+}
+
+.uploaded-design-label {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(15, 42, 68, 0.78);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.design-preview-card {
+  overflow: hidden;
+  border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
+  border-radius: 10px;
+  background: rgb(var(--v-theme-surface));
+}
+
+.design-preview-image {
+  background: #fff;
+}
+
+.design-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border-top: 1px solid rgba(15, 42, 68, 0.12);
+}
+
+.preview-logo {
+  position: relative;
+  z-index: 1;
+  height: 22px;
+  width: auto;
+  margin-bottom: 8px;
+}
+
+.preview-title,
+.preview-name,
+.preview-copy,
+.preview-footer {
+  position: relative;
+  z-index: 1;
 }
 
 .preview-title {

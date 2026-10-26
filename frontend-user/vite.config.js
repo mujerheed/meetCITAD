@@ -1,7 +1,35 @@
 import { fileURLToPath, URL } from 'node:url'
+import { readFile, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { resolve } from 'node:path'
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import vuetify from 'vite-plugin-vuetify'
+
+function serviceWorkerPrecache() {
+  return {
+    name: 'meetcitad-service-worker-precache',
+    apply: 'build',
+    async writeBundle(options, bundle) {
+      const template = await readFile(new URL('./public/sw.js', import.meta.url), 'utf8')
+      const assets = Object.keys(bundle)
+        .filter((filename) => filename.startsWith('assets/'))
+        .sort()
+        .map((filename) => `/${filename}`)
+      const version = createHash('sha256')
+        .update(template)
+        .update(JSON.stringify(assets))
+        .update(String(bundle['index.html']?.source || ''))
+        .digest('hex')
+        .slice(0, 12)
+      const worker = template
+        .replace("const CACHE_VERSION = 'meetcitad-v2';", `const CACHE_VERSION = 'meetcitad-v2-${version}';`)
+        .replace('const BUILD_ASSETS = [];', `const BUILD_ASSETS = ${JSON.stringify(assets)};`)
+
+      await writeFile(resolve(options.dir, 'sw.js'), worker)
+    },
+  }
+}
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -10,7 +38,8 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [
       vue(),
-      vuetify({ autoImport: true })
+      vuetify({ autoImport: true }),
+      serviceWorkerPrecache()
     ],
     resolve: {
       alias: {
